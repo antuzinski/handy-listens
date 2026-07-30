@@ -1,10 +1,10 @@
 use crate::audio_toolkit::{
-    list_input_devices,
+    list_input_devices, list_output_devices,
     vad::{
         SmoothedVad, VAD_OFFLINE_HANGOVER_FRAMES, VAD_ONSET_FRAMES, VAD_PREFILL_FRAMES,
         VAD_STREAMING_HANGOVER_FRAMES,
     },
-    AudioRecorder, SileroVad, VadPolicy,
+    AudioRecorder, SileroVad, StreamDirection, VadPolicy,
 };
 use crate::helpers::clamshell;
 use crate::managers::transcription::StreamRouter;
@@ -304,6 +304,12 @@ fn create_audio_recorder(
 
 /* ──────────────────────────────────────────────────────────────── */
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AudioSource {
+    Microphone,
+    SystemAudio,
+}
+
 #[derive(Clone)]
 pub struct AudioRecordingManager {
     state: Arc<Mutex<RecordingState>>,
@@ -323,7 +329,8 @@ pub struct AudioRecordingManager {
     /// change misses naturally; cleared when an open fails (device unplugged)
     /// so the retry re-enumerates. The system-default case is never cached —
     /// the recorder resolves the current default itself, cheaply.
-    cached_device: Arc<Mutex<Option<(String, cpal::Device)>>>,
+    // The cached device tuple: (device_name, source, device)
+    cached_device: Arc<Mutex<Option<(String, AudioSource, cpal::Device)>>>,
 }
 
 impl AudioRecordingManager {
@@ -357,7 +364,7 @@ impl AudioRecordingManager {
 
         // Always-on?  Open immediately.
         if matches!(mode, MicrophoneMode::AlwaysOn) {
-            manager.start_microphone_stream()?;
+            manager.start_microphone_stream(AudioSource::Microphone)?;
         }
 
         Ok(manager)
@@ -368,28 +375,33 @@ impl AudioRecordingManager {
     /// The microphone name the settings ask for, or `None` for the system
     /// default. Only runs the clamshell probe (an `ioreg` subprocess, ~10-20ms)
     /// when a clamshell microphone is actually configured.
-    fn desired_device_name(&self, settings: &AppSettings) -> Option<String> {
-        if settings.clamshell_microphone.is_some() {
-            let clamshell_started = Instant::now();
-            let is_clamshell = clamshell::is_clamshell().unwrap_or(false);
-            debug!(
-                "device resolve: clamshell_check={:?} (clamshell={})",
-                clamshell_started.elapsed(),
-                is_clamshell
-            );
-            if is_clamshell {
-                return settings.clamshell_microphone.clone();
+    fn desired_device_name(&self, settings: &AppSettings, source: AudioSource) -> Option<String> {
+        match source {
+            AudioSource::SystemAudio => settings.selected_system_audio_device.clone(),
+            AudioSource::Microphone => {
+                if settings.clamshell_microphone.is_some() {
+                    let clamshell_started = Instant::now();
+                    let is_clamshell = clamshell::is_clamshell().unwrap_or(false);
+                    debug!(
+                        "device resolve: clamshell_check={:?} (clamshell={})",
+                        clamshell_started.elapsed(),
+                        is_clamshell
+                    );
+                    if is_clamshell {
+                        return settings.clamshell_microphone.clone();
+                    }
+                }
+                settings.selected_microphone.clone()
             }
         }
-        settings.selected_microphone.clone()
     }
 
     pub fn invalidate_device_cache(&self) {
         *self.cached_device.lock().unwrap() = None;
     }
 
-    fn get_effective_microphone_device(&self, settings: &AppSettings) -> Option<cpal::Device> {
-        let device_name = match self.desired_device_name(settings) {
+    fn get_effective_microphone_device(&self, settings: &AppSettings, source: AudioSource) -> Option<cpal::Device> {
+        let device_name = match self.desired_device_name(settings, source) {
             Some(name) => name,
             None => {
                 debug!("device resolve: no mic configured -> system default");
@@ -399,8 +411,8 @@ impl AudioRecordingManager {
 
         // Cache hit: skip the full enumeration. A stale device (unplugged)
         // fails at open, where the caller invalidates and retries fresh.
-        if let Some((cached_name, device)) = self.cached_device.lock().unwrap().as_ref() {
-            if *cached_name == device_name {
+        if let Some((cached_name, cached_source, device)) = self.cached_device.lock().unwrap().as_ref() {
+            if *cached_name == device_name && *cached_source == source {
                 debug!("device resolve: cache hit for '{}'", device_name);
                 return Some(device.clone());
             }
@@ -408,14 +420,27 @@ impl AudioRecordingManager {
 
         // Find the device by name
         let enumerate_started = Instant::now();
-        let device = match list_input_devices() {
-            Ok(devices) => devices
-                .into_iter()
-                .find(|d| d.name == device_name)
-                .map(|d| d.device),
-            Err(e) => {
-                debug!("Failed to list devices, using default: {}", e);
-                None
+        let device = if matches!(source, AudioSource::SystemAudio) {
+            match list_output_devices() {
+                Ok(devices) => devices
+                    .into_iter()
+                    .find(|d| d.name == device_name)
+                    .map(|d| d.device),
+                Err(e) => {
+                    debug!("Failed to list output devices, using default: {}", e);
+                    None
+                }
+            }
+        } else {
+            match list_input_devices() {
+                Ok(devices) => devices
+                    .into_iter()
+                    .find(|d| d.name == device_name)
+                    .map(|d| d.device),
+                Err(e) => {
+                    debug!("Failed to list devices, using default: {}", e);
+                    None
+                }
             }
         };
         debug!(
@@ -424,7 +449,7 @@ impl AudioRecordingManager {
             device.is_some()
         );
         if let Some(d) = &device {
-            *self.cached_device.lock().unwrap() = Some((device_name, d.clone()));
+            *self.cached_device.lock().unwrap() = Some((device_name, source, d.clone()));
         }
         device
     }
@@ -515,7 +540,7 @@ impl AudioRecordingManager {
         Ok(())
     }
 
-    pub fn start_microphone_stream(&self) -> Result<(), anyhow::Error> {
+    pub fn start_microphone_stream(&self, source: AudioSource) -> Result<(), anyhow::Error> {
         let mut open_flag = self.is_open.lock().unwrap();
         if *open_flag {
             debug!("Microphone stream already active");
@@ -543,7 +568,7 @@ impl AudioRecordingManager {
         // "No input device found" error this used to check for.
         let settings = get_settings(&self.app_handle);
         let resolve_started = Instant::now();
-        let selected_device = self.get_effective_microphone_device(&settings);
+        let selected_device = self.get_effective_microphone_device(&settings, source);
         let resolve_elapsed = resolve_started.elapsed();
 
         // Ensure VAD is loaded if it wasn't for whatever reason
@@ -551,17 +576,22 @@ impl AudioRecordingManager {
         self.preload_vad()?;
         let vad_elapsed = vad_started.elapsed();
 
+        let direction = match source {
+            AudioSource::Microphone => StreamDirection::Input,
+            AudioSource::SystemAudio => StreamDirection::Output,
+        };
+
         let open_started = Instant::now();
         let mut recorder_opt = self.recorder.lock().unwrap();
         if let Some(rec) = recorder_opt.as_mut() {
-            if let Err(first_err) = rec.open(selected_device.clone()) {
+            if let Err(first_err) = rec.open(selected_device.clone(), direction) {
                 // A cached device or config may have gone stale (unplugged,
                 // rate/format changed). Re-resolve from a fresh enumeration and
                 // retry once before surfacing the error.
                 warn!("Recorder open failed ({first_err}); re-resolving device and retrying once");
                 self.invalidate_device_cache();
-                let fresh_device = self.get_effective_microphone_device(&settings);
-                rec.open(fresh_device)
+                let fresh_device = self.get_effective_microphone_device(&settings, source);
+                rec.open(fresh_device, direction)
                     .map_err(|e| anyhow::anyhow!("Failed to open recorder: {}", e))?;
             }
         }
@@ -626,7 +656,7 @@ impl AudioRecordingManager {
             }
             (MicrophoneMode::OnDemand, MicrophoneMode::AlwaysOn) => {
                 self.close_generation.fetch_add(1, Ordering::SeqCst);
-                self.start_microphone_stream()?;
+                self.start_microphone_stream(AudioSource::Microphone)?;
             }
             _ => {}
         }
@@ -641,6 +671,7 @@ impl AudioRecordingManager {
         &self,
         binding_id: &str,
         vad_policy: VadPolicy,
+        source: AudioSource,
     ) -> Result<(), String> {
         let mut state = self.state.lock().unwrap();
 
@@ -649,7 +680,7 @@ impl AudioRecordingManager {
             if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
                 // Cancel any pending lazy close
                 self.close_generation.fetch_add(1, Ordering::SeqCst);
-                if let Err(e) = self.start_microphone_stream() {
+                if let Err(e) = self.start_microphone_stream(source) {
                     let msg = format!("{e}");
                     error!("Failed to open microphone stream: {msg}");
                     return Err(msg);
@@ -678,10 +709,11 @@ impl AudioRecordingManager {
         // just avoids holding a stale cpal::Device alive.)
         self.invalidate_device_cache();
         // If currently open, restart the microphone stream to use the new device
+        // We assume dictation mode for updates since captioning is mostly shortcut-driven
         if *self.is_open.lock().unwrap() {
             self.close_generation.fetch_add(1, Ordering::SeqCst);
             self.stop_microphone_stream();
-            self.start_microphone_stream()?;
+            self.start_microphone_stream(AudioSource::Microphone)?;
         }
         Ok(())
     }

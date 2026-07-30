@@ -270,6 +270,28 @@ pub fn get_selected_output_device(app: AppHandle) -> Result<String, String> {
 
 #[tauri::command]
 #[specta::specta]
+pub fn set_selected_system_audio_device(app: AppHandle, device_name: String) -> Result<(), String> {
+    let mut settings = get_settings(&app);
+    settings.selected_system_audio_device = if device_name == "default" {
+        None
+    } else {
+        Some(device_name)
+    };
+    write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn get_selected_system_audio_device(app: AppHandle) -> Result<String, String> {
+    let settings = get_settings(&app);
+    Ok(settings
+        .selected_system_audio_device
+        .unwrap_or_else(|| "default".to_string()))
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn play_test_sound(app: AppHandle, sound_type: String) {
     let sound = match sound_type.as_str() {
         "start" => audio_feedback::SoundType::Start,

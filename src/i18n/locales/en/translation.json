@@ -172,6 +172,10 @@
             "name": "Transcribe Shortcut",
             "description": "The keyboard shortcut to record and transcribe your voice."
           },
+          "caption": {
+            "name": "Caption Shortcut",
+            "description": "The keyboard shortcut to capture and transcribe system audio."
+          },
           "cancel": {
             "name": "Cancel Shortcut",
             "description": "The keyboard shortcut to cancel the current recording."
@@ -197,6 +201,9 @@
       "pushToTalk": {
         "label": "Push To Talk",
         "description": "Hold to record, release to stop"
+      },
+      "liveCaptions": {
+      "title": "Live Captions"
       }
     },
     "models": {
@@ -238,6 +245,12 @@
       "volume": {
         "title": "Volume",
         "description": "Adjust the volume of audio feedback sounds"
+      },
+      "systemAudioDevice": {
+        "title": "System Audio",
+        "description": "Select the device to capture system audio for transcription",
+        "placeholder": "Select system audio device...",
+        "loading": "Loading..."
       }
     },
     "advanced": {

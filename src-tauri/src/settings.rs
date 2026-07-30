@@ -381,6 +381,8 @@ pub struct AppSettings {
     pub clamshell_microphone: Option<String>,
     #[serde(default)]
     pub selected_output_device: Option<String>,
+    #[serde(default)]
+    pub selected_system_audio_device: Option<String>,
     #[serde(default = "default_translate_to_english")]
     pub translate_to_english: bool,
     #[serde(default = "default_selected_language")]
@@ -836,6 +838,26 @@ pub fn get_default_settings() -> AppSettings {
         },
     );
 
+    #[cfg(target_os = "windows")]
+    let default_caption_shortcut = "ctrl+shift+c";
+    #[cfg(target_os = "macos")]
+    let default_caption_shortcut = "option+shift+c";
+    #[cfg(target_os = "linux")]
+    let default_caption_shortcut = "ctrl+shift+c";
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    let default_caption_shortcut = "alt+shift+c";
+
+    bindings.insert(
+        "caption".to_string(),
+        ShortcutBinding {
+            id: "caption".to_string(),
+            name: "Live Captioning".to_string(),
+            description: "Captures system audio for continuous live subtitles without pasting.".to_string(),
+            default_binding: default_caption_shortcut.to_string(),
+            current_binding: default_caption_shortcut.to_string(),
+        },
+    );
+
     AppSettings {
         settings_schema_version: default_settings_schema_version(),
         bindings,
@@ -854,6 +876,7 @@ pub fn get_default_settings() -> AppSettings {
         selected_microphone: None,
         clamshell_microphone: None,
         selected_output_device: None,
+        selected_system_audio_device: None,
         translate_to_english: false,
         selected_language: "auto".to_string(),
         overlay_position: default_overlay_position(),
@@ -1188,6 +1211,7 @@ mod tests {
             "selected_microphone": "MacBook Pro Microphone",
             "clamshell_microphone": null,
             "selected_output_device": null,
+            "selected_system_audio_device": null,
             "translate_to_english": false,
             "selected_language": "en",
             "overlay_position": "bottom",

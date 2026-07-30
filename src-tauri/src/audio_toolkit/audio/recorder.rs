@@ -70,6 +70,12 @@ impl VadConfig {
 /// policy while recording. Used to feed a live streaming transcription as audio arrives.
 pub type AudioFrameCallback = Arc<dyn Fn(&[f32]) + Send + Sync + 'static>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamDirection {
+    Input,
+    Output,
+}
+
 pub struct AudioRecorder {
     device: Option<Device>,
     cmd_tx: Option<mpsc::Sender<Cmd>>,
@@ -136,7 +142,11 @@ impl AudioRecorder {
         self
     }
 
-    pub fn open(&mut self, device: Option<Device>) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn open(
+        &mut self,
+        device: Option<Device>,
+        direction: StreamDirection,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if self.worker_handle.is_some() {
             return Ok(()); // already open
         }
@@ -176,7 +186,7 @@ impl AudioRecorder {
                 let config_was_cached = cached_config.is_some();
                 let config = match cached_config {
                     Some(cfg) => cfg,
-                    None => AudioRecorder::get_preferred_config(&thread_device)
+                    None => AudioRecorder::get_preferred_config(&thread_device, direction)
                         .map_err(|e| format!("Failed to fetch preferred config: {e}"))?,
                 };
                 let config_elapsed = config_started.elapsed();
@@ -402,21 +412,34 @@ impl AudioRecorder {
 
     fn get_preferred_config(
         device: &cpal::Device,
+        direction: StreamDirection,
     ) -> Result<cpal::SupportedStreamConfig, Box<dyn std::error::Error>> {
         // Use the device's native/default sample rate and let the FrameResampler
         // in run_consumer() downsample to 16kHz. This avoids forcing hardware into
         // a non-native rate which can cause issues on some devices (Bluetooth
         // codecs, certain ALSA drivers, etc.).
-        let default_config = device.default_input_config()?;
+        let default_config = match direction {
+            StreamDirection::Output => device.default_output_config()?,
+            StreamDirection::Input => device.default_input_config()?,
+        };
         let target_rate = default_config.sample_rate();
 
         // Try to find the best sample format at the device's default rate
-        let supported_configs = match device.supported_input_configs() {
-            Ok(configs) => configs,
-            Err(e) => {
-                log::warn!("Could not enumerate input configs ({e}), using device default");
-                return Ok(default_config);
-            }
+        let supported_configs: Vec<_> = match direction {
+            StreamDirection::Output => match device.supported_output_configs() {
+                Ok(configs) => configs.collect(),
+                Err(e) => {
+                    log::warn!("Could not enumerate output configs ({e}), using device default");
+                    return Ok(default_config);
+                }
+            },
+            StreamDirection::Input => match device.supported_input_configs() {
+                Ok(configs) => configs.collect(),
+                Err(e) => {
+                    log::warn!("Could not enumerate input configs ({e}), using device default");
+                    return Ok(default_config);
+                }
+            },
         };
         let mut best_config: Option<cpal::SupportedStreamConfigRange> = None;
 

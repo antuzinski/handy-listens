@@ -52,6 +52,10 @@ pub trait ShortcutAction: Send + Sync {
 // Transcribe Action
 struct TranscribeAction {
     post_process: bool,
+    source: crate::managers::audio::AudioSource,
+    paste_output: bool,
+    save_history: bool,
+    apply_mute: bool,
 }
 
 /// Field name for structured output JSON schema
@@ -541,12 +545,15 @@ impl ShortcutAction for TranscribeAction {
             let app_clone = app.clone();
             // The blocking helper exits immediately if audio feedback is disabled,
             // so we can always reuse this thread to ensure mute happens right after playback.
+            let manage_mute = self.apply_mute;
             std::thread::spawn(move || {
                 play_feedback_sound_blocking(&app_clone, SoundType::Start);
-                rm_clone.apply_mute();
+                if manage_mute {
+                    rm_clone.apply_mute();
+                }
             });
 
-            if let Err(e) = rm.try_start_recording(&binding_id, vad_policy) {
+            if let Err(e) = rm.try_start_recording(&binding_id, vad_policy, self.source) {
                 debug!("Recording failed: {}", e);
                 recording_error = Some(e);
             }
@@ -555,19 +562,22 @@ impl ShortcutAction for TranscribeAction {
             // This allows the microphone to be activated before playing the sound
             debug!("On-demand mode: Starting recording first, then audio feedback");
             let recording_start_time = Instant::now();
-            match rm.try_start_recording(&binding_id, vad_policy) {
+            match rm.try_start_recording(&binding_id, vad_policy, self.source) {
                 Ok(()) => {
                     debug!("Recording started in {:?}", recording_start_time.elapsed());
                     // Small delay to ensure microphone stream is active
                     let app_clone = app.clone();
                     let rm_clone = Arc::clone(&rm);
+                    let apply_mute = self.apply_mute;
                     std::thread::spawn(move || {
                         std::thread::sleep(std::time::Duration::from_millis(100));
                         debug!("Handling delayed audio feedback/mute sequence");
                         // Helper handles disabled audio feedback by returning early, so we reuse it
                         // to keep mute sequencing consistent in every mode.
                         play_feedback_sound_blocking(&app_clone, SoundType::Start);
-                        rm_clone.apply_mute();
+                        if apply_mute {
+                            rm_clone.apply_mute();
+                        }
                     });
                 }
                 Err(e) => {
@@ -638,13 +648,17 @@ impl ShortcutAction for TranscribeAction {
         }
 
         // Unmute before playing audio feedback so the stop sound is audible
-        rm.remove_mute();
+        if self.apply_mute {
+            rm.remove_mute();
+        }
 
         // Play audio feedback for recording stop
         play_feedback_sound(app, SoundType::Stop);
 
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
         let post_process = self.post_process;
+        let paste_output = self.paste_output;
+        let save_history = self.save_history;
         let cancel_generation = rm.cancel_generation();
 
         tauri::async_runtime::spawn(async move {
@@ -771,14 +785,18 @@ impl ShortcutAction for TranscribeAction {
 
                             // Save to history if WAV was saved
                             if wav_saved {
-                                if let Err(err) = hm.save_entry(
-                                    file_name,
-                                    transcription,
-                                    post_process,
-                                    processed.post_processed_text.clone(),
-                                    processed.post_process_prompt.clone(),
-                                ) {
-                                    error!("Failed to save history entry: {}", err);
+                                if save_history {
+                                    if let Err(err) = hm.save_entry(
+                                        file_name,
+                                        transcription,
+                                        post_process,
+                                        processed.post_processed_text.clone(),
+                                        processed.post_process_prompt.clone(),
+                                    ) {
+                                        error!("Failed to save history entry: {}", err);
+                                    }
+                                } else {
+                                    debug!("History disabled for this action: skipped saving");
                                 }
                             }
 
@@ -798,15 +816,19 @@ impl ShortcutAction for TranscribeAction {
                                         return;
                                     }
 
-                                    match utils::paste(final_text, ah_clone.clone()) {
-                                        Ok(()) => debug!(
-                                            "Text pasted successfully in {:?}",
-                                            paste_time.elapsed()
-                                        ),
-                                        Err(e) => {
-                                            error!("Failed to paste transcription: {}", e);
-                                            let _ = ah_clone.emit("paste-error", ());
+                                    if paste_output {
+                                        match utils::paste(final_text, ah_clone.clone()) {
+                                            Ok(()) => debug!(
+                                                "Text pasted successfully in {:?}",
+                                                paste_time.elapsed()
+                                            ),
+                                            Err(e) => {
+                                                error!("Failed to paste transcription: {}", e);
+                                                let _ = ah_clone.emit("paste-error", ());
+                                            }
                                         }
+                                    } else {
+                                        debug!("Paste disabled for this action: skipped paste");
                                     }
                                     utils::hide_recording_overlay(&ah_clone);
                                     change_tray_icon(&ah_clone, TrayIconState::Idle);
@@ -908,11 +930,31 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
         "transcribe".to_string(),
         Arc::new(TranscribeAction {
             post_process: false,
+            source: crate::managers::audio::AudioSource::Microphone,
+            paste_output: true,
+            save_history: true,
+            apply_mute: true,
+        }) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "caption".to_string(),
+        Arc::new(TranscribeAction {
+            post_process: false,
+            source: crate::managers::audio::AudioSource::SystemAudio,
+            paste_output: false,
+            save_history: false,
+            apply_mute: false,
         }) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "transcribe_with_post_process".to_string(),
-        Arc::new(TranscribeAction { post_process: true }) as Arc<dyn ShortcutAction>,
+        Arc::new(TranscribeAction { 
+            post_process: true,
+            source: crate::managers::audio::AudioSource::Microphone,
+            paste_output: true,
+            save_history: true,
+            apply_mute: true,
+        }) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "cancel".to_string(),

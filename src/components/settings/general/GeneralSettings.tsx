@@ -10,6 +10,7 @@ import { AudioFeedback } from "../AudioFeedback";
 import { useSettings } from "../../../hooks/useSettings";
 import { VolumeSlider } from "../VolumeSlider";
 import { MuteWhileRecording } from "../MuteWhileRecording";
+import { SystemAudioDeviceSelector } from "../SystemAudioDeviceSelector";
 import { ModelSettingsCard } from "./ModelSettingsCard";
 
 export const GeneralSettings: React.FC = () => {
@@ -38,6 +39,10 @@ export const GeneralSettings: React.FC = () => {
           disabled={!audioFeedbackEnabled}
         />
         <VolumeSlider disabled={!audioFeedbackEnabled} />
+      </SettingsGroup>
+      <SettingsGroup title={t("settings.general.liveCaptions.title")}>
+        <ShortcutInput shortcutId="caption" grouped={true} />
+        <SystemAudioDeviceSelector descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
     </div>
   );

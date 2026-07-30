@@ -109,6 +109,12 @@ const settingUpdaters: {
         ? "default"
         : (value as string),
     ),
+  selected_system_audio_device: (value) =>
+    commands.setSelectedSystemAudioDevice(
+      (value as string) === "Default" || value === null
+        ? "default"
+        : (value as string),
+    ),
   recording_retention_period: (value) =>
     commands.updateRecordingRetentionPeriod(value as string),
   translate_to_english: (value) =>
@@ -206,6 +212,8 @@ export const useSettingsStore = create<SettingsStore>()(
             clamshell_microphone: settings.clamshell_microphone ?? "Default",
             selected_output_device:
               settings.selected_output_device ?? "Default",
+            selected_system_audio_device:
+              settings.selected_system_audio_device ?? "Default",
           };
           set({ settings: normalizedSettings, isLoading: false });
         } else {

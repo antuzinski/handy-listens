@@ -16,6 +16,10 @@ pub struct CliArgs {
     #[arg(long)]
     pub toggle_transcription: bool,
 
+    /// Toggle captioning on/off (sent to running instance)
+    #[arg(long)]
+    pub toggle_captioning: bool,
+
     /// Toggle transcription with post-processing on/off (sent to running instance)
     #[arg(long)]
     pub toggle_post_process: bool,
