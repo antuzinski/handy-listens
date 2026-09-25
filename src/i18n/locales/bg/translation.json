@@ -383,6 +383,22 @@
         "remove": "Премахване на {{word}}",
         "duplicate": "„{{word}}“ вече съществува"
       },
+      "whisperPrompt": {
+        "title": "Подсказка за транскрипция в Whisper",
+        "presetLabel": "1. Choose by spoken language",
+        "textLabel": "2. Prompt sent to Whisper (editable)",
+        "presets": {
+          "ru": "Russian · punctuation",
+          "ruEn": "Russian + English terms · punctuation (recommended)",
+          "en": "English · punctuation",
+          "ruInstruction": "Russian · instruction (experimental)",
+          "ruEnInstruction": "Russian + English · instruction (experimental)",
+          "custom": "Custom prompt",
+          "none": "No style prompt (Custom Words still apply)"
+        },
+        "description": "Незадължителен текстов контекст само за моделите Whisper. Комбинира се с персонализираните думи и може да повлияе на формулировката и пунктуацията; не е команда за превод или пренаписване.",
+        "placeholder": "Пример: Имена на продукти: Handy, Vulkan. Запазвайте английските думи на английски и използвайте естествена пунктуация."
+      },
       "voiceActivityDetection": {
         "title": "Откриване на гласова активност",
         "description": "Филтрира тишината от записите. Моделите с поддръжка на стрийминг използват по-дълга опашка на VAD; изключването на VAD записва необработен звук."

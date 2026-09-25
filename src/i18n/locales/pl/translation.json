@@ -383,6 +383,22 @@
         "remove": "Usuń {{word}}",
         "duplicate": "\"{{word}}\" już istnieje"
       },
+      "whisperPrompt": {
+        "title": "Prompt transkrypcji Whisper",
+        "presetLabel": "1. Choose by spoken language",
+        "textLabel": "2. Prompt sent to Whisper (editable)",
+        "presets": {
+          "ru": "Russian · punctuation",
+          "ruEn": "Russian + English terms · punctuation (recommended)",
+          "en": "English · punctuation",
+          "ruInstruction": "Russian · instruction (experimental)",
+          "ruEnInstruction": "Russian + English · instruction (experimental)",
+          "custom": "Custom prompt",
+          "none": "No style prompt (Custom Words still apply)"
+        },
+        "description": "Opcjonalny kontekst tekstowy tylko dla modeli Whisper. Jest łączony z własnymi słowami i może wpływać na sformułowania oraz interpunkcję; nie jest poleceniem tłumaczenia ani przeredagowania wypowiedzi.",
+        "placeholder": "Przykład: nazwy produktów: Handy, Vulkan. Zachowuj angielskie słowa po angielsku i stosuj naturalną interpunkcję."
+      },
       "voiceActivityDetection": {
         "title": "Wykrywanie aktywności głosowej",
         "description": "Odfiltrowuje ciszę z nagrań. Modele obsługujące streaming używają dłuższego marginesu VAD; wyłączenie VAD nagrywa surowy dźwięk."

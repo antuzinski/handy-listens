@@ -383,6 +383,22 @@
         "remove": "הסר את {{word}}",
         "duplicate": "\"{{word}}\" כבר קיימת"
       },
+      "whisperPrompt": {
+        "title": "הנחיית תמלול ל‑Whisper",
+        "presetLabel": "1. Choose by spoken language",
+        "textLabel": "2. Prompt sent to Whisper (editable)",
+        "presets": {
+          "ru": "Russian · punctuation",
+          "ruEn": "Russian + English terms · punctuation (recommended)",
+          "en": "English · punctuation",
+          "ruInstruction": "Russian · instruction (experimental)",
+          "ruEnInstruction": "Russian + English · instruction (experimental)",
+          "custom": "Custom prompt",
+          "none": "No style prompt (Custom Words still apply)"
+        },
+        "description": "הקשר טקסטואלי אופציונלי למודלי Whisper בלבד. הוא משולב עם מילים מותאמות אישית ועשוי להשפיע על הניסוח והפיסוק; זו אינה הוראה לתרגם או לנסח מחדש את הדיבור.",
+        "placeholder": "לדוגמה: שמות מוצרים: Handy, Vulkan. השאירו מילים באנגלית באנגלית והשתמשו בפיסוק טבעי."
+      },
       "voiceActivityDetection": {
         "title": "זיהוי פעילות קולית",
         "description": "סינון שקט מההקלטות. מודלים התומכים בסטרימינג משתמשים בזנב VAD ארוך יותר; ביטול VAD מקליט אודיו גולמי."

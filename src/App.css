@@ -13,6 +13,7 @@
   --color-mid-gray: var(--color-mid-gray);
   --color-warning: var(--color-warning);
   --color-error: var(--color-error);
+  --color-accent-cyan: var(--color-accent-cyan);
 }
 
 :root {
@@ -43,6 +44,13 @@
   /* Apply colors */
   color: var(--color-text);
   background-color: var(--color-background);
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--color-text) 4%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--color-text) 4%, transparent) 1px, transparent 1px),
+    radial-gradient(ellipse at 12% 0%, color-mix(in srgb, var(--color-logo-primary) 14%, transparent), transparent 42%),
+    radial-gradient(ellipse at 88% 100%, color-mix(in srgb, var(--color-accent-cyan) 8%, transparent), transparent 40%);
+  background-size: 36px 36px, 36px 36px, auto, auto;
+  background-attachment: fixed;
 }
 
 .container {
@@ -65,6 +73,57 @@
    Overlay scrollbars do not reserve a gutter, so this has no effect on them. */
 :root[data-onboarding-active] {
   scrollbar-gutter: stable both-edges;
+}
+/*
+ * Explicit theme override, driven by the `theme` setting via
+ * `document.documentElement.dataset.theme`. When set, the higher-specificity
+ * attribute selectors win over the `prefers-color-scheme` media query above,
+ * so a user can keep Handy light or dark regardless of the OS setting.
+ * `system` (or no attribute) leaves the OS in charge.
+ */
+:root[data-theme="light"] {
+  --color-text: var(--light-color-text);
+  --color-background: var(--light-color-background);
+  --color-logo-primary: var(--light-color-logo-primary);
+  --color-logo-stroke: var(--light-color-logo-stroke);
+  --color-warning: var(--light-color-warning);
+  --color-error: var(--light-color-error);
+}
+
+:root[data-theme="dark"] {
+  --color-text: var(--dark-color-text);
+  --color-background: var(--dark-color-background);
+  --color-logo-primary: var(--dark-color-logo-primary);
+  --color-logo-stroke: var(--dark-color-logo-stroke);
+  --color-warning: var(--dark-color-warning);
+  --color-error: var(--dark-color-error);
+  --color-accent-cyan: var(--dark-color-accent-cyan);
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--color-text) 5%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--color-text) 5%, transparent) 1px, transparent 1px),
+    radial-gradient(ellipse at 12% 0%, color-mix(in srgb, var(--color-logo-primary) 17%, transparent), transparent 42%),
+    radial-gradient(ellipse at 88% 100%, color-mix(in srgb, var(--color-accent-cyan) 9%, transparent), transparent 40%);
+}
+
+.settings-glass-panel {
+  background-color: color-mix(in srgb, var(--color-background) 84%, transparent) !important;
+  border-color: color-mix(in srgb, var(--color-logo-primary) 18%, transparent) !important;
+  box-shadow: 0 14px 36px color-mix(in srgb, #050819 28%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.settings-glass-panel > .divide-y > * {
+  border-color: color-mix(in srgb, var(--color-mid-gray) 16%, transparent);
+}
+
+.whisper-prompt-editor {
+  border-color: color-mix(in srgb, var(--color-logo-primary) 36%, var(--color-mid-gray));
+  background-color: color-mix(in srgb, var(--color-background) 82%, var(--color-logo-primary) 4%);
+}
+
+.whisper-prompt-editor:focus {
+  border-color: var(--color-logo-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-logo-primary) 26%, transparent);
 }
 
 /* macOS - tint native overlay scrollbar thumb */

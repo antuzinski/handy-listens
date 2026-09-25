@@ -11,6 +11,7 @@ use crate::managers::transcription::StreamRouter;
 use crate::settings::{get_settings, write_settings, AppSettings, VadBackend};
 use crate::utils;
 use log::{debug, error, info, trace, warn};
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -351,12 +352,87 @@ fn create_audio_recorder(
     Ok(recorder)
 }
 
+#[derive(Clone, Copy)]
+enum MixedStream {
+    Microphone,
+    SystemAudio,
+}
+
+struct CombinedAudioMixer {
+    microphone: Mutex<VecDeque<f32>>,
+    system_audio: Mutex<VecDeque<f32>>,
+    stream_router: Arc<StreamRouter>,
+}
+
+impl CombinedAudioMixer {
+    fn new(stream_router: Arc<StreamRouter>) -> Self {
+        Self {
+            microphone: Mutex::new(VecDeque::new()),
+            system_audio: Mutex::new(VecDeque::new()),
+            stream_router,
+        }
+    }
+
+    fn reset(&self) {
+        self.microphone.lock().unwrap().clear();
+        self.system_audio.lock().unwrap().clear();
+    }
+
+    fn feed(&self, source: MixedStream, frame: &[f32]) {
+        let mut microphone = self.microphone.lock().unwrap();
+        let mut system_audio = self.system_audio.lock().unwrap();
+        let queue = match source {
+            MixedStream::Microphone => &mut microphone,
+            MixedStream::SystemAudio => &mut system_audio,
+        };
+        queue.extend(frame.iter().copied());
+
+        while !microphone.is_empty() && !system_audio.is_empty() {
+            let count = microphone.len().min(system_audio.len());
+            let mixed: Vec<f32> = (0..count)
+                .map(|_| {
+                    let mic = microphone.pop_front().unwrap_or_default();
+                    let system = system_audio.pop_front().unwrap_or_default();
+                    ((mic + system) * 0.5).clamp(-1.0, 1.0)
+                })
+                .collect();
+            self.stream_router.feed(&mixed);
+        }
+    }
+}
+
+fn create_raw_audio_recorder(
+    mixer: Arc<CombinedAudioMixer>,
+    source: MixedStream,
+) -> Result<AudioRecorder, anyhow::Error> {
+    Ok(AudioRecorder::new()
+        .map_err(|e| anyhow::anyhow!("Failed to create combined audio recorder: {}", e))?
+        .with_audio_callback(move |frame| mixer.feed(source, frame)))
+}
+
+struct CombinedRecorders {
+    microphone: AudioRecorder,
+    system_audio: AudioRecorder,
+}
+
+fn mix_captured_samples(microphone: &[f32], system_audio: &[f32]) -> Vec<f32> {
+    let count = microphone.len().max(system_audio.len());
+    (0..count)
+        .map(|index| {
+            let mic = microphone.get(index).copied().unwrap_or_default();
+            let system = system_audio.get(index).copied().unwrap_or_default();
+            ((mic + system) * 0.5).clamp(-1.0, 1.0)
+        })
+        .collect()
+}
+
 /* ──────────────────────────────────────────────────────────────── */
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AudioSource {
     Microphone,
     SystemAudio,
+    MicrophoneAndSystemAudio,
 }
 
 /// One recording session's first-sample notification. Waiting on this never
@@ -385,6 +461,8 @@ pub struct AudioRecordingManager {
     app_handle: tauri::AppHandle,
 
     recorder: Arc<Mutex<Option<AudioRecorder>>>,
+    combined_recorders: Arc<Mutex<Option<CombinedRecorders>>>,
+    combined_mixer: Arc<CombinedAudioMixer>,
     is_open: Arc<Mutex<bool>>,
     active_source: Arc<Mutex<Option<AudioSource>>>,
     is_recording: Arc<Mutex<bool>>,
@@ -432,6 +510,8 @@ impl AudioRecordingManager {
             app_handle: app.clone(),
 
             recorder: Arc::new(Mutex::new(None)),
+            combined_recorders: Arc::new(Mutex::new(None)),
+            combined_mixer: Arc::new(CombinedAudioMixer::new(Arc::clone(&stream_router))),
             is_open: Arc::new(Mutex::new(false)),
             active_source: Arc::new(Mutex::new(None)),
             is_recording: Arc::new(Mutex::new(false)),
@@ -454,9 +534,7 @@ impl AudioRecordingManager {
 
     /* ---------- helper methods --------------------------------------------- */
 
-    /// The persisted microphone preference currently in effect. Only runs the
-    /// clamshell probe (an `ioreg` subprocess, ~10-20ms) when a clamshell
-    /// microphone is actually configured.
+    /// The persisted audio-device preference currently in effect.
     fn desired_microphone(&self, settings: &AppSettings, source: AudioSource) -> DesiredMicrophone {
         if source == AudioSource::SystemAudio {
             return settings
@@ -492,6 +570,11 @@ impl AudioRecordingManager {
         settings: &AppSettings,
         source: AudioSource,
     ) -> MicrophoneResolution {
+        let source = if source == AudioSource::MicrophoneAndSystemAudio {
+            AudioSource::Microphone
+        } else {
+            source
+        };
         let desired = self.desired_microphone(settings, source);
         let (device_name, selected_microphone) = match desired {
             DesiredMicrophone::Default => {
@@ -562,6 +645,14 @@ impl AudioRecordingManager {
             device,
             unavailable_selected_microphone,
         }
+    }
+
+    fn get_effective_microphone_device(
+        &self,
+        settings: &AppSettings,
+        source: AudioSource,
+    ) -> Option<cpal::Device> {
+        self.resolve_microphone_device(settings, source).device
     }
 
     /// Keep persisted settings and the UI aligned with a successful runtime
@@ -664,20 +755,47 @@ impl AudioRecordingManager {
         Ok(())
     }
 
+    fn preload_combined_recorders(&self) -> Result<(), anyhow::Error> {
+        let mut recorders = self.combined_recorders.lock().unwrap();
+        if recorders.is_none() {
+            *recorders = Some(CombinedRecorders {
+                microphone: create_raw_audio_recorder(
+                    Arc::clone(&self.combined_mixer),
+                    MixedStream::Microphone,
+                )?,
+                system_audio: create_raw_audio_recorder(
+                    Arc::clone(&self.combined_mixer),
+                    MixedStream::SystemAudio,
+                )?,
+            });
+        }
+        Ok(())
+    }
+
     pub fn start_microphone_stream(&self, source: AudioSource) -> Result<(), anyhow::Error> {
         let mut open_flag = self.is_open.lock().unwrap();
         if *open_flag {
-            let source_changed = *self.active_source.lock().unwrap() != Some(source);
+            let previous_source = *self.active_source.lock().unwrap();
+            let source_changed = previous_source != Some(source);
             // `is_open` only records that we opened a stream at some point, not
             // that one is still running. If capture has since failed (mic
             // unplugged mid-session, USB dropout), rebuild it before the next
             // recording instead of handing the caller a stalled recorder.
-            let needs_reopen = self
-                .recorder
-                .lock()
-                .unwrap()
-                .as_ref()
-                .is_some_and(|rec| rec.needs_reopen());
+            let needs_reopen = if previous_source == Some(AudioSource::MicrophoneAndSystemAudio) {
+                self.combined_recorders
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .is_some_and(|pair| {
+                        pair.microphone.needs_reopen() || pair.system_audio.needs_reopen()
+                    })
+            } else {
+                self.recorder
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .is_some_and(|rec| rec.needs_reopen())
+            };
 
             if !needs_reopen && !source_changed {
                 // trace, not debug: with the aliveness check in
@@ -698,7 +816,13 @@ impl AudioRecordingManager {
                     mute_guard.did_mute = false;
                 }
             }
-            if let Some(rec) = self.recorder.lock().unwrap().as_mut() {
+            if previous_source == Some(AudioSource::MicrophoneAndSystemAudio) {
+                if let Some(pair) = self.combined_recorders.lock().unwrap().as_mut() {
+                    let _ = pair.microphone.close();
+                    let _ = pair.system_audio.close();
+                }
+                self.combined_mixer.reset();
+            } else if let Some(rec) = self.recorder.lock().unwrap().as_mut() {
                 let _ = rec.close();
             }
             *self.is_recording.lock().unwrap() = false;
@@ -723,48 +847,81 @@ impl AudioRecordingManager {
             }
         }
 
-        // Get the selected device from settings, considering clamshell mode.
-        // No pre-flight enumeration here: when nothing is configured the
-        // recorder resolves the system default itself, and a machine with no
-        // input devices at all fails inside open() with the same
-        // "No input device found" error this used to check for.
         let settings = get_settings(&self.app_handle);
         let resolve_started = Instant::now();
         let mut resolution = self.resolve_microphone_device(&settings, source);
         let resolve_elapsed = resolve_started.elapsed();
-
-        // Ensure VAD is loaded if it wasn't for whatever reason
         let vad_started = Instant::now();
-        self.preload_vad()?;
-        let vad_elapsed = vad_started.elapsed();
-
-        let direction = match source {
-            AudioSource::Microphone => StreamDirection::Input,
-            AudioSource::SystemAudio => StreamDirection::Output,
-        };
-
+        let mut vad_elapsed = Duration::ZERO;
+        let mut open_elapsed = Duration::ZERO;
         let open_started = Instant::now();
-        let mut recorder_opt = self.recorder.lock().unwrap();
-        if let Some(rec) = recorder_opt.as_mut() {
-            if let Err(first_err) = rec.open(resolution.device.clone(), direction) {
-                // A cached device or config may have gone stale (unplugged,
-                // rate/format changed). Re-resolve from a fresh enumeration and
-                // retry once before surfacing the error.
-                warn!("Recorder open failed ({first_err}); re-resolving device and retrying once");
+        if matches!(source, AudioSource::MicrophoneAndSystemAudio) {
+            let microphone_device =
+                self.get_effective_microphone_device(&settings, AudioSource::Microphone);
+            let system_device =
+                self.get_effective_microphone_device(&settings, AudioSource::SystemAudio);
+            self.preload_combined_recorders()?;
+            self.combined_mixer.reset();
+
+            let mut combined = self.combined_recorders.lock().unwrap();
+            let pair = combined
+                .as_mut()
+                .ok_or_else(|| anyhow::anyhow!("Combined recorder is not available"))?;
+            if let Err(error) = pair
+                .microphone
+                .open(microphone_device, StreamDirection::Input)
+            {
                 self.invalidate_device_cache();
-                resolution = self.resolve_microphone_device(&settings, source);
-                rec.open(resolution.device.clone(), direction)
-                    .map_err(|e| anyhow::anyhow!("Failed to open recorder: {}", e))?;
+                return Err(anyhow::anyhow!(
+                    "Failed to open microphone recorder: {error}"
+                ));
             }
+            if let Err(error) = pair
+                .system_audio
+                .open(system_device, StreamDirection::Output)
+            {
+                let _ = pair.microphone.close();
+                self.invalidate_device_cache();
+                return Err(anyhow::anyhow!(
+                    "Failed to open system audio recorder: {error}"
+                ));
+            }
+            debug!("Combined microphone and system audio streams opened");
+        } else {
+            // Get the selected device from settings, considering clamshell mode.
+            // When nothing is configured, the recorder resolves the system default
+            // in open() using the stream direction.
+            self.preload_vad()?;
+            vad_elapsed = vad_started.elapsed();
+            let direction = match source {
+                AudioSource::Microphone => StreamDirection::Input,
+                AudioSource::SystemAudio => StreamDirection::Output,
+                AudioSource::MicrophoneAndSystemAudio => unreachable!(),
+            };
+
+            let mut recorder_opt = self.recorder.lock().unwrap();
+            if let Some(rec) = recorder_opt.as_mut() {
+                if let Err(first_err) = rec.open(resolution.device.clone(), direction) {
+                    // A cached device or config may have gone stale (unplugged,
+                    // rate/format changed). Re-resolve from a fresh enumeration and
+                    // retry once before surfacing the error.
+                    warn!(
+                        "Recorder open failed ({first_err}); re-resolving device and retrying once"
+                    );
+                    self.invalidate_device_cache();
+                    resolution = self.resolve_microphone_device(&settings, source);
+                    rec.open(resolution.device.clone(), direction)
+                        .map_err(|e| anyhow::anyhow!("Failed to open recorder: {}", e))?;
+                }
+            }
+            debug!("single stream VAD initialization: {:?}", vad_elapsed);
+            open_elapsed = open_started.elapsed();
+            drop(recorder_opt);
         }
         debug!(
-            "mic stream breakdown: device_resolve={:?} vad_ensure={:?} open={:?}",
-            resolve_elapsed,
-            vad_elapsed,
-            open_started.elapsed()
+            "audio stream breakdown: device_resolve={:?} vad_ensure={:?} open={:?}",
+            resolve_elapsed, vad_elapsed, open_elapsed
         );
-        drop(recorder_opt);
-
         *open_flag = true;
         *self.active_source.lock().unwrap() = Some(source);
         if let Some(unavailable_name) = resolution.unavailable_selected_microphone {
@@ -798,7 +955,19 @@ impl AudioRecordingManager {
             mute_guard.did_mute = false;
         }
 
-        if let Some(rec) = self.recorder.lock().unwrap().as_mut() {
+        let source = self.active_source.lock().unwrap().take();
+        if matches!(source, Some(AudioSource::MicrophoneAndSystemAudio)) {
+            if let Some(pair) = self.combined_recorders.lock().unwrap().as_mut() {
+                if *self.is_recording.lock().unwrap() {
+                    let _ = pair.microphone.stop();
+                    let _ = pair.system_audio.stop();
+                    *self.is_recording.lock().unwrap() = false;
+                }
+                let _ = pair.microphone.close();
+                let _ = pair.system_audio.close();
+            }
+            self.combined_mixer.reset();
+        } else if let Some(rec) = self.recorder.lock().unwrap().as_mut() {
             // If still recording, stop first.
             if *self.is_recording.lock().unwrap() {
                 let _ = rec.stop();
@@ -876,7 +1045,25 @@ impl AudioRecordingManager {
                 return Err(msg);
             }
 
-            if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
+            let start_result = if source == AudioSource::MicrophoneAndSystemAudio {
+                if let Some(pair) = self.combined_recorders.lock().unwrap().as_ref() {
+                    match pair.microphone.start(vad_policy) {
+                        Ok(receiver) => match pair.system_audio.start(vad_policy) {
+                            Ok(_) => Ok(receiver),
+                            Err(error) => {
+                                let _ = pair.microphone.stop();
+                                Err(error)
+                            }
+                        },
+                        Err(error) => Err(error),
+                    }
+                } else {
+                    Err(
+                        Box::new(std::io::Error::other("Combined recorder not available"))
+                            as Box<dyn std::error::Error>,
+                    )
+                }
+            } else if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
                 match rec.start(vad_policy) {
                     Ok(receiver) => {
                         let generation = self.capture_generation.fetch_add(1, Ordering::AcqRel) + 1;
@@ -895,8 +1082,23 @@ impl AudioRecordingManager {
                     }
                     Err(error) => return Err(format!("Failed to start recorder: {error}")),
                 }
+            } else {
+                Err(Box::new(std::io::Error::other("Recorder not available"))
+                    as Box<dyn std::error::Error>)
             }
-            Err("Recorder not available".to_string())
+            .map_err(|e| format!("Failed to start recorder: {e}"))?;
+            let generation = self.capture_generation.fetch_add(1, Ordering::AcqRel) + 1;
+            *self.is_recording.lock().unwrap() = true;
+            self.set_state(
+                &mut state,
+                RecordingState::Recording {
+                    binding_id: binding_id.to_string(),
+                },
+            );
+            return Ok(RecordingReadiness {
+                receiver: start_result,
+                generation,
+            });
         } else {
             Err("Already recording".to_string())
         }
@@ -961,9 +1163,10 @@ impl AudioRecordingManager {
         self.invalidate_device_cache();
         let was_open = *self.is_open.lock().unwrap();
         if was_open {
+            let source = *self.active_source.lock().unwrap();
             self.close_generation.fetch_add(1, Ordering::SeqCst);
             self.stop_microphone_stream();
-            self.start_microphone_stream(AudioSource::Microphone)?;
+            self.start_microphone_stream(source.unwrap_or(AudioSource::Microphone))?;
         }
         Ok(())
     }
@@ -1054,7 +1257,23 @@ impl AudioRecordingManager {
                     }
                 }
 
-                let samples = if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
+                let source = *self.active_source.lock().unwrap();
+                let samples = if matches!(source, Some(AudioSource::MicrophoneAndSystemAudio)) {
+                    if let Some(pair) = self.combined_recorders.lock().unwrap().as_ref() {
+                        let microphone = pair.microphone.stop().unwrap_or_else(|error| {
+                            error!("microphone stop() failed: {error}");
+                            Vec::new()
+                        });
+                        let system_audio = pair.system_audio.stop().unwrap_or_else(|error| {
+                            error!("system audio stop() failed: {error}");
+                            Vec::new()
+                        });
+                        mix_captured_samples(&microphone, &system_audio)
+                    } else {
+                        error!("Combined recorder not available");
+                        Vec::new()
+                    }
+                } else if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
                     match rec.stop() {
                         Ok(buf) => buf,
                         Err(e) => {
@@ -1077,7 +1296,10 @@ impl AudioRecordingManager {
                     } else {
                         self.stop_microphone_stream();
                     }
-                } else if *self.active_source.lock().unwrap() == Some(AudioSource::SystemAudio) {
+                } else if matches!(
+                    *self.active_source.lock().unwrap(),
+                    Some(AudioSource::SystemAudio | AudioSource::MicrophoneAndSystemAudio)
+                ) {
                     let _ = self.stop_microphone_stream();
                     if let Err(error) = self.start_microphone_stream(AudioSource::Microphone) {
                         error!("Failed to restore always-on microphone after captioning: {error}");
@@ -1123,7 +1345,14 @@ impl AudioRecordingManager {
                 self.set_state(&mut state, RecordingState::Idle);
                 drop(state);
 
-                if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
+                let source = *self.active_source.lock().unwrap();
+                if matches!(source, Some(AudioSource::MicrophoneAndSystemAudio)) {
+                    if let Some(pair) = self.combined_recorders.lock().unwrap().as_ref() {
+                        let _ = pair.microphone.stop();
+                        let _ = pair.system_audio.stop();
+                    }
+                    self.combined_mixer.reset();
+                } else if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
                     let _ = rec.stop(); // Discard the result
                 }
 
@@ -1136,7 +1365,10 @@ impl AudioRecordingManager {
                     } else {
                         self.stop_microphone_stream();
                     }
-                } else if *self.active_source.lock().unwrap() == Some(AudioSource::SystemAudio) {
+                } else if matches!(
+                    *self.active_source.lock().unwrap(),
+                    Some(AudioSource::SystemAudio | AudioSource::MicrophoneAndSystemAudio)
+                ) {
                     let _ = self.stop_microphone_stream();
                     if let Err(error) = self.start_microphone_stream(AudioSource::Microphone) {
                         error!("Failed to restore always-on microphone after captioning: {error}");

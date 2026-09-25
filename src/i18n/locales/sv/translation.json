@@ -383,6 +383,22 @@
         "remove": "Ta bort {{word}}",
         "duplicate": "\"{{word}}\" finns redan"
       },
+      "whisperPrompt": {
+        "title": "Whisper-transkriberingsprompt",
+        "presetLabel": "1. Choose by spoken language",
+        "textLabel": "2. Prompt sent to Whisper (editable)",
+        "presets": {
+          "ru": "Russian · punctuation",
+          "ruEn": "Russian + English terms · punctuation (recommended)",
+          "en": "English · punctuation",
+          "ruInstruction": "Russian · instruction (experimental)",
+          "ruEnInstruction": "Russian + English · instruction (experimental)",
+          "custom": "Custom prompt",
+          "none": "No style prompt (Custom Words still apply)"
+        },
+        "description": "Valfri textkontext endast för Whisper-modeller. Kombineras med anpassade ord och kan påverka formulering och interpunktion; det är inte en instruktion att översätta eller skriva om talet.",
+        "placeholder": "Exempel: Produktnamn: Handy, Vulkan. Behåll engelska ord på engelska och använd naturlig interpunktion."
+      },
       "voiceActivityDetection": {
         "title": "Röstaktivitetsdetektering",
         "description": "Filtrerar bort tystnad från inspelningar. Modeller med streamingstöd använder en längre VAD-svans; om VAD inaktiveras spelas rått ljud in."

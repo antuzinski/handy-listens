@@ -383,6 +383,22 @@
         "remove": "{{word}} verwijderen",
         "duplicate": "\"{{word}}\" bestaat al"
       },
+      "whisperPrompt": {
+        "title": "Whisper-transcriptieprompt",
+        "presetLabel": "1. Choose by spoken language",
+        "textLabel": "2. Prompt sent to Whisper (editable)",
+        "presets": {
+          "ru": "Russian · punctuation",
+          "ruEn": "Russian + English terms · punctuation (recommended)",
+          "en": "English · punctuation",
+          "ruInstruction": "Russian · instruction (experimental)",
+          "ruEnInstruction": "Russian + English · instruction (experimental)",
+          "custom": "Custom prompt",
+          "none": "No style prompt (Custom Words still apply)"
+        },
+        "description": "Optionele tekstcontext voor alleen Whisper-modellen. Wordt gecombineerd met aangepaste woorden en kan de formulering en interpunctie beïnvloeden; het is geen opdracht om spraak te vertalen of te herschrijven.",
+        "placeholder": "Voorbeeld: productnamen: Handy, Vulkan. Behoud Engelse woorden in het Engels en gebruik natuurlijke interpunctie."
+      },
       "voiceActivityDetection": {
         "title": "Spraakactiviteitsdetectie (VAD)",
         "description": "Filter stilte uit opnames. Streaming-modellen gebruiken een langere VAD-uitloop; het uitschakelen van VAD neemt de ruwe audio op."

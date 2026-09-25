@@ -383,6 +383,22 @@
         "remove": "{{word}} entfernen",
         "duplicate": "\"{{word}}\" existiert bereits"
       },
+      "whisperPrompt": {
+        "title": "Whisper-Transkriptionsprompt",
+        "presetLabel": "1. Choose by spoken language",
+        "textLabel": "2. Prompt sent to Whisper (editable)",
+        "presets": {
+          "ru": "Russian · punctuation",
+          "ruEn": "Russian + English terms · punctuation (recommended)",
+          "en": "English · punctuation",
+          "ruInstruction": "Russian · instruction (experimental)",
+          "ruEnInstruction": "Russian + English · instruction (experimental)",
+          "custom": "Custom prompt",
+          "none": "No style prompt (Custom Words still apply)"
+        },
+        "description": "Optionaler Textkontext nur für Whisper-Modelle. Wird mit benutzerdefinierten Wörtern kombiniert und kann Wortwahl und Zeichensetzung beeinflussen; es ist kein Befehl, Sprache zu übersetzen oder umzuschreiben.",
+        "placeholder": "Beispiel: Produktnamen: Handy, Vulkan. Englische Wörter auf Englisch beibehalten und natürliche Zeichensetzung verwenden."
+      },
       "voiceActivityDetection": {
         "title": "Sprachaktivitätserkennung (VAD)",
         "description": "Filtert Stille aus Aufnahmen. Streamingfähige Modelle verwenden ein längeres VAD-Ende; das Deaktivieren von VAD nimmt Rohaudio auf."

@@ -930,6 +930,23 @@ impl TranscriptionManager {
         let settings = get_settings(&self.app_handle);
         let effective_language =
             effective_language_for_model(&settings, self.model_manager.as_ref(), &model_id);
+        let whisper_prompt = build_whisper_prompt(
+            &settings.whisper_prompt,
+            &settings.custom_words,
+            &settings.whisper_prompt_preset,
+        );
+        let whisper_extension = match &engine {
+            LoadedEngine::TranscribeCpp(session) if session.model().arch() == "whisper" => {
+                Some(RunExtension::Whisper(WhisperRunOptions {
+                    initial_prompt: (!whisper_prompt.is_empty()).then(|| whisper_prompt.clone()),
+                    condition_on_prev_tokens: Some(true),
+                    max_prev_context_tokens: Some(128),
+                    compression_ratio_thold: Some(2.8),
+                    ..Default::default()
+                }))
+            }
+            _ => None,
+        };
         let run_plan = transcribe_cpp_run_plan(
             settings.translate_to_english,
             &effective_language,
@@ -946,6 +963,7 @@ impl TranscriptionManager {
             task: run_plan.task,
             language: run_plan.language,
             target_language: run_plan.target_language,
+            family: whisper_extension,
             ..Default::default()
         };
 
@@ -1142,6 +1160,8 @@ impl TranscriptionManager {
             false,
             &finalized.output_language,
             &finalized.supported_languages,
+            false,
+            false,
         );
 
         self.maybe_unload_immediately("streaming transcription");
@@ -1227,6 +1247,11 @@ impl TranscriptionManager {
         // back to settings, so the intent survives switching models and back.
         let validated_language =
             effective_language_for_model(&settings, self.model_manager.as_ref(), &active_model);
+        let whisper_prompt = build_whisper_prompt(
+            &settings.whisper_prompt,
+            &settings.custom_words,
+            &settings.whisper_prompt_preset,
+        );
         if validated_language != settings.selected_language {
             debug!(
                 "Language intent '{}' resolved to '{}' for model '{}'",
@@ -1307,11 +1332,15 @@ impl TranscriptionManager {
                         // whisper run extension to a non-whisper arch is rejected
                         // with INVALID_ARG, so skip it there and let the fuzzy
                         // post-correction handle custom words instead.
-                        let family = if settings.custom_words.is_empty() || !model_is_whisper {
+                        let family = if !model_is_whisper {
                             None
                         } else {
                             Some(RunExtension::Whisper(WhisperRunOptions {
-                                initial_prompt: Some(settings.custom_words.join(", ")),
+                                initial_prompt: (!whisper_prompt.is_empty())
+                                    .then(|| whisper_prompt.clone()),
+                                condition_on_prev_tokens: Some(true),
+                                max_prev_context_tokens: Some(128),
+                                compression_ratio_thold: Some(2.8),
                                 ..Default::default()
                             }))
                         };
@@ -1499,6 +1528,8 @@ impl TranscriptionManager {
             model_is_whisper,
             &output_language,
             &model_languages,
+            active_model == "breeze-asr",
+            model_is_whisper,
         );
 
         let et = std::time::Instant::now();
@@ -1730,6 +1761,21 @@ fn with_model_detected_language(
     }
 }
 
+fn build_whisper_prompt(custom_prompt: &str, custom_words: &[String], preset: &str) -> String {
+    let mut parts = Vec::with_capacity(2);
+    let custom_prompt = custom_prompt.trim();
+    let default_prompt = "Я проверил настройки, then saved the file, и продолжил работу. «Всё готово?» — спросил он.";
+    if preset != "none" && !custom_prompt.is_empty() {
+        parts.push(custom_prompt.to_string());
+    } else if preset == "ru_en" {
+        parts.push(default_prompt.to_string());
+    }
+    if !custom_words.is_empty() {
+        parts.push(custom_words.join(", "));
+    }
+    parts.join("\n")
+}
+
 struct TranscribeCppRunPlan {
     task: Task,
     language: Option<String>,
@@ -1772,8 +1818,20 @@ fn post_process_transcription_text(
     custom_words_already_prompted: bool,
     output_language: &OutputLanguageEvidence,
     supported_languages: &[String],
+    is_breeze: bool,
+    is_whisper: bool,
 ) -> String {
     fail_open_text_transform(raw, |raw| {
+        let raw = if is_whisper {
+            clean_whisper_repetitions_and_hallucinations(&raw)
+        } else {
+            raw
+        };
+        let raw = if is_breeze {
+            restore_breeze_word_boundaries(&raw)
+        } else {
+            raw
+        };
         let corrected = if !settings.custom_words.is_empty() && !custom_words_already_prompted {
             apply_custom_words(
                 &raw,
@@ -1812,6 +1870,87 @@ fn post_process_transcription_text(
 
         normalize_transcription_output(&without_fillers)
     })
+}
+
+fn clean_whisper_repetitions_and_hallucinations(text: &str) -> String {
+    let mut kept = Vec::new();
+    let mut previous = String::new();
+
+    for sentence in split_transcription_sentences(text) {
+        let sentence = sentence.trim();
+        if sentence.is_empty() {
+            continue;
+        }
+
+        let artifact = sentence
+            .trim_matches(|c: char| " \t\r\n.!?…。？！\"“”«»".contains(c))
+            .to_lowercase();
+        let canonical: String = sentence
+            .chars()
+            .filter(|c| c.is_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect();
+        if matches!(
+            artifact.as_str(),
+            "продолжение следует" | "[музыка]" | "(музыка)" | "[music]" | "(music)"
+        ) || canonical == previous
+        {
+            continue;
+        }
+
+        previous = canonical;
+        kept.push(sentence);
+    }
+
+    kept.join(" ")
+}
+
+fn split_transcription_sentences(text: &str) -> Vec<&str> {
+    let mut sentences = Vec::new();
+    let mut start = 0;
+
+    for (index, character) in text.char_indices() {
+        if !matches!(character, '.' | '?' | '!' | '…' | '。' | '？' | '！') {
+            continue;
+        }
+
+        let punctuation_end = index + character.len_utf8();
+        let closing_chars = text[punctuation_end..]
+            .char_indices()
+            .take_while(|(_, next)| matches!(next, '"' | '”' | '»' | '’' | ')' | ']' | '）' | '】'))
+            .map(|(offset, next)| offset + next.len_utf8())
+            .last()
+            .unwrap_or(0);
+        let end = punctuation_end + closing_chars;
+        let followed_by_boundary = text[end..].chars().next().is_none_or(char::is_whitespace);
+
+        if followed_by_boundary {
+            sentences.push(&text[start..end]);
+            start = end;
+        }
+    }
+
+    if start < text.len() {
+        sentences.push(&text[start..]);
+    }
+    sentences
+}
+
+fn restore_breeze_word_boundaries(text: &str) -> String {
+    static CYRILLIC_LATIN: OnceLock<regex::Regex> = OnceLock::new();
+    static LATIN_CYRILLIC: OnceLock<regex::Regex> = OnceLock::new();
+    static GLUED_RUSSIAN_SENTENCE: OnceLock<regex::Regex> = OnceLock::new();
+
+    let cyrillic_latin =
+        CYRILLIC_LATIN.get_or_init(|| regex::Regex::new(r"([А-Яа-яЁё])([A-Za-z])").unwrap());
+    let latin_cyrillic =
+        LATIN_CYRILLIC.get_or_init(|| regex::Regex::new(r"([A-Za-z])([А-Яа-яЁё])").unwrap());
+    let glued_sentence = GLUED_RUSSIAN_SENTENCE
+        .get_or_init(|| regex::Regex::new(r"([а-яё])([А-ЯЁ][а-яё]+)").unwrap());
+
+    let text = glued_sentence.replace_all(text, "$1. $2");
+    let text = cyrillic_latin.replace_all(&text, "$1 $2");
+    latin_cyrillic.replace_all(&text, "$1 $2").to_string()
 }
 
 /// Optional text cleanup must never discard a successful model result. The
@@ -2151,6 +2290,55 @@ pub fn get_available_accelerators() -> AvailableAccelerators {
 mod tests {
     use super::*;
 
+    #[test]
+    fn whisper_prompt_combines_free_text_with_custom_words() {
+        assert_eq!(
+            build_whisper_prompt(
+                "  Preserve English terms.  ",
+                &["Handy".to_string(), "Vulkan".to_string()],
+                "custom",
+            ),
+            "Preserve English terms.\nHandy, Vulkan"
+        );
+        assert_eq!(build_whisper_prompt("  ", &[], "none"), "");
+        assert_eq!(
+            build_whisper_prompt("  ", &[], "ru_en"),
+            "Я проверил настройки, then saved the file, и продолжил работу. «Всё готово?» — спросил он."
+        );
+        assert_eq!(
+            build_whisper_prompt("Seed text", &[], "custom"),
+            "Seed text"
+        );
+    }
+
+    #[test]
+    fn whisper_post_processing_removes_only_whole_sentence_artifacts() {
+        assert_eq!(
+            clean_whisper_repetitions_and_hallucinations(
+                "Продолжение следует. Hello world. Hello world! [музыка]"
+            ),
+            "Hello world."
+        );
+        assert_eq!(
+            clean_whisper_repetitions_and_hallucinations(
+                "Я сказал: «Продолжение следует», и ушёл."
+            ),
+            "Я сказал: «Продолжение следует», и ушёл."
+        );
+        assert_eq!(
+            clean_whisper_repetitions_and_hallucinations("Use .NET tools. Then open file.txt."),
+            "Use .NET tools. Then open file.txt."
+        );
+    }
+
+    #[test]
+    fn breeze_cleanup_restores_script_and_sentence_boundaries() {
+        assert_eq!(
+            restore_breeze_word_boundaries("кулинариейПочему это важно, тестAPI"),
+            "кулинарией. Почему это важно, тест API"
+        );
+    }
+
     fn languages(codes: &[&str]) -> Vec<String> {
         codes.iter().map(|code| (*code).to_string()).collect()
     }
@@ -2235,6 +2423,8 @@ mod tests {
             false,
             &evidence,
             &supported,
+            false,
+            false,
         );
 
         assert_eq!(
@@ -2277,6 +2467,8 @@ mod tests {
             false,
             &evidence,
             &languages(&["en", "pt"]),
+            false,
+            false,
         );
 
         assert_eq!(evidence, OutputLanguageEvidence::Unknown);
@@ -2297,6 +2489,8 @@ mod tests {
             false,
             &OutputLanguageEvidence::Unknown,
             &languages(&["en", "pt", "es", "de"]),
+            false,
+            false,
         );
 
         assert_eq!(
@@ -2318,6 +2512,8 @@ mod tests {
             false,
             &OutputLanguageEvidence::Unknown,
             &languages(&["en", "pt", "es", "de"]),
+            false,
+            false,
         );
 
         assert_eq!(
@@ -2404,6 +2600,8 @@ mod tests {
             false,
             &evidence,
             &supported,
+            false,
+            false,
         );
         assert_eq!(result, "eu vi um carro");
     }

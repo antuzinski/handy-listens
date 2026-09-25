@@ -383,6 +383,22 @@
         "remove": "{{word}} हटाएं",
         "duplicate": "\"{{word}}\" पहले से मौजूद है"
       },
+      "whisperPrompt": {
+        "title": "Whisper ट्रांसक्रिप्शन प्रॉम्प्ट",
+        "presetLabel": "1. Choose by spoken language",
+        "textLabel": "2. Prompt sent to Whisper (editable)",
+        "presets": {
+          "ru": "Russian · punctuation",
+          "ruEn": "Russian + English terms · punctuation (recommended)",
+          "en": "English · punctuation",
+          "ruInstruction": "Russian · instruction (experimental)",
+          "ruEnInstruction": "Russian + English · instruction (experimental)",
+          "custom": "Custom prompt",
+          "none": "No style prompt (Custom Words still apply)"
+        },
+        "description": "केवल Whisper मॉडल के लिए वैकल्पिक टेक्स्ट संदर्भ। इसे कस्टम शब्दों के साथ जोड़ा जाता है और यह शब्दों तथा विराम-चिह्नों को प्रभावित कर सकता है; यह ऑडियो का अनुवाद या पुनर्लेखन करने का निर्देश नहीं है।",
+        "placeholder": "उदाहरण: उत्पाद के नाम: Handy, Vulkan. अंग्रेज़ी शब्दों को अंग्रेज़ी में रखें और स्वाभाविक विराम-चिह्न लगाएँ।"
+      },
       "voiceActivityDetection": {
         "title": "वॉइस एक्टिविटी डिटेक्शन",
         "description": "रिकॉर्डिंग से बिना आवाज़ वाले हिस्से हटाएं. स्ट्रीमिंग वाले मॉडल लंबी VAD टेल इस्तेमाल करते हैं; VAD बंद करने पर कच्चा ऑडियो रिकॉर्ड होता है."

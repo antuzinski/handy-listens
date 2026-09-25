@@ -23,6 +23,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::Manager;
 use tauri::{AppHandle, Emitter};
+use tauri_plugin_clipboard_manager::ClipboardExt;
 
 const CANCELLATION_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
@@ -58,6 +59,7 @@ struct TranscribeAction {
     post_process: bool,
     source: crate::managers::audio::AudioSource,
     paste_output: bool,
+    copy_output_to_clipboard: bool,
     save_history: bool,
     apply_mute: bool,
 }
@@ -683,6 +685,7 @@ impl ShortcutAction for TranscribeAction {
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
         let post_process = self.post_process;
         let paste_output = self.paste_output;
+        let copy_output_to_clipboard = self.copy_output_to_clipboard;
         let save_history = self.save_history;
         let cancel_generation = rm.cancel_generation();
 
@@ -832,6 +835,7 @@ impl ShortcutAction for TranscribeAction {
                                 let ah_clone = ah.clone();
                                 let paste_time = Instant::now();
                                 let final_text = processed.final_text;
+                                let clipboard_text = final_text.clone();
                                 let rm_for_paste = Arc::clone(&rm);
                                 ah.run_on_main_thread(move || {
                                     if rm_for_paste.was_cancelled_since(cancel_generation) {
@@ -854,6 +858,16 @@ impl ShortcutAction for TranscribeAction {
                                         }
                                     } else {
                                         debug!("Paste disabled for this action: skipped paste");
+                                    }
+                                    if copy_output_to_clipboard {
+                                        if let Err(e) =
+                                            ah_clone.clipboard().write_text(clipboard_text)
+                                        {
+                                            error!(
+                                                "Failed to copy transcription to clipboard: {}",
+                                                e
+                                            );
+                                        }
                                     }
                                     utils::hide_recording_overlay(&ah_clone);
                                     set_tray_state(&ah_clone, TrayIconState::Idle);
@@ -957,6 +971,7 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
             post_process: false,
             source: crate::managers::audio::AudioSource::Microphone,
             paste_output: true,
+            copy_output_to_clipboard: false,
             save_history: true,
             apply_mute: true,
         }) as Arc<dyn ShortcutAction>,
@@ -965,9 +980,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
         "caption".to_string(),
         Arc::new(TranscribeAction {
             post_process: false,
-            source: crate::managers::audio::AudioSource::SystemAudio,
-            paste_output: false,
-            save_history: false,
+            source: crate::managers::audio::AudioSource::MicrophoneAndSystemAudio,
+            paste_output: true,
+            copy_output_to_clipboard: true,
+            save_history: true,
             apply_mute: false,
         }) as Arc<dyn ShortcutAction>,
     );
@@ -977,6 +993,7 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
             post_process: true,
             source: crate::managers::audio::AudioSource::Microphone,
             paste_output: true,
+            copy_output_to_clipboard: false,
             save_history: true,
             apply_mute: true,
         }) as Arc<dyn ShortcutAction>,

@@ -383,6 +383,22 @@
         "remove": "刪除 {{word}}",
         "duplicate": "「{{word}}」已存在"
       },
+      "whisperPrompt": {
+        "title": "Whisper 轉錄提示",
+        "presetLabel": "1. Choose by spoken language",
+        "textLabel": "2. Prompt sent to Whisper (editable)",
+        "presets": {
+          "ru": "Russian · punctuation",
+          "ruEn": "Russian + English terms · punctuation (recommended)",
+          "en": "English · punctuation",
+          "ruInstruction": "Russian · instruction (experimental)",
+          "ruEnInstruction": "Russian + English · instruction (experimental)",
+          "custom": "Custom prompt",
+          "none": "No style prompt (Custom Words still apply)"
+        },
+        "description": "僅供 Whisper 模型使用的選用文字脈絡。會與自訂詞彙合併，可能影響措辭與標點；這不是要求翻譯或改寫語音的指令。",
+        "placeholder": "例如：產品名稱：Handy、Vulkan。英文詞彙維持英文，並使用自然標點。"
+      },
       "voiceActivityDetection": {
         "title": "語音活動偵測",
         "description": "過濾錄音中的靜音。支援串流的模型會使用較長的 VAD 尾段；停用 VAD 則會錄製原始音訊"

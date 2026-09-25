@@ -174,7 +174,7 @@
           },
           "caption": {
             "name": "Caption Shortcut",
-            "description": "The keyboard shortcut to capture and transcribe system audio."
+            "description": "The keyboard shortcut to capture and transcribe your voice and system audio."
           },
           "cancel": {
             "name": "Cancel Shortcut",
@@ -390,11 +390,27 @@
       },
       "customWords": {
         "title": "Custom Words",
-        "description": "Help supported models recognize names and specialized terms. Fuzzy correction is currently limited to words using A–Z and numbers.",
+        "description": "Add names and technical terms. Whisper receives them as recognition hints; other models can use Handy's fuzzy correction where supported.",
         "placeholder": "Add a word",
         "add": "Add",
         "remove": "Remove {{word}}",
         "duplicate": "\"{{word}}\" already exists"
+      },
+      "whisperPrompt": {
+        "title": "Whisper transcription prompt",
+        "description": "Used only by Whisper-family models (including Turbo and Breeze), for dictation and live captions. Pick a preset that matches the spoken language; English-only audio should use English, not a Russian prompt. Other models such as Nemotron ignore this field.",
+        "presetLabel": "1. Choose by the language you speak",
+        "textLabel": "2. Prompt sent to Whisper (editable)",
+        "presets": {
+          "ru": "Russian · punctuation",
+          "ruEn": "Russian + English terms · punctuation (recommended)",
+          "en": "English · punctuation",
+          "ruInstruction": "Russian · instruction (experimental)",
+          "ruEnInstruction": "Russian + English · instruction (experimental)",
+          "custom": "Custom prompt",
+          "none": "No style prompt (Custom Words still apply)"
+        },
+        "placeholder": "Example: Product names: Handy, Vulkan. Use natural punctuation and preserve English words in English."
       },
       "voiceActivityDetection": {
         "title": "Voice Activity Detection",

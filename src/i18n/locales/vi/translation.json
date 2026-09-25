@@ -383,6 +383,22 @@
         "remove": "Xóa {{word}}",
         "duplicate": "\"{{word}}\" đã tồn tại"
       },
+      "whisperPrompt": {
+        "title": "Lời nhắc phiên âm Whisper",
+        "presetLabel": "1. Choose by spoken language",
+        "textLabel": "2. Prompt sent to Whisper (editable)",
+        "presets": {
+          "ru": "Russian · punctuation",
+          "ruEn": "Russian + English terms · punctuation (recommended)",
+          "en": "English · punctuation",
+          "ruInstruction": "Russian · instruction (experimental)",
+          "ruEnInstruction": "Russian + English · instruction (experimental)",
+          "custom": "Custom prompt",
+          "none": "No style prompt (Custom Words still apply)"
+        },
+        "description": "Ngữ cảnh văn bản tùy chọn chỉ dành cho các mô hình Whisper. Được kết hợp với từ tùy chỉnh và có thể ảnh hưởng đến cách diễn đạt, dấu câu; đây không phải lệnh dịch hay viết lại lời nói.",
+        "placeholder": "Ví dụ: Tên sản phẩm: Handy, Vulkan. Giữ nguyên các từ tiếng Anh và dùng dấu câu tự nhiên."
+      },
       "voiceActivityDetection": {
         "title": "Phát hiện hoạt động giọng nói",
         "description": "Lọc bỏ khoảng lặng khỏi bản ghi. Các mô hình hỗ trợ truyền trực tiếp dùng đuôi VAD dài hơn; tắt VAD sẽ ghi âm thanh thô."

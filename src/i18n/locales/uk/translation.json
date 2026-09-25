@@ -383,6 +383,22 @@
         "remove": "Видалити {{word}}",
         "duplicate": "\"{{word}}\" вже існує"
       },
+      "whisperPrompt": {
+        "title": "Промпт транскрибування Whisper",
+        "presetLabel": "1. Choose by spoken language",
+        "textLabel": "2. Prompt sent to Whisper (editable)",
+        "presets": {
+          "ru": "Russian · punctuation",
+          "ruEn": "Russian + English terms · punctuation (recommended)",
+          "en": "English · punctuation",
+          "ruInstruction": "Russian · instruction (experimental)",
+          "ruEnInstruction": "Russian + English · instruction (experimental)",
+          "custom": "Custom prompt",
+          "none": "No style prompt (Custom Words still apply)"
+        },
+        "description": "Необов’язковий текстовий контекст лише для моделей Whisper. Поєднується з власними словами й може впливати на формулювання та пунктуацію; це не команда перекладати чи перефразовувати мовлення.",
+        "placeholder": "Наприклад: назви продуктів: Handy, Vulkan. Залишайте англійські слова англійською та використовуйте природну пунктуацію."
+      },
       "voiceActivityDetection": {
         "title": "Виявлення голосової активності",
         "description": "Відфільтровує тишу із записів. Моделі з підтримкою потокової обробки використовують довший «хвіст» VAD; вимкнення VAD записує необроблений звук."

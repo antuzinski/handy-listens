@@ -383,6 +383,22 @@
         "remove": "删除 {{word}}",
         "duplicate": "\"{{word}}\" 已存在"
       },
+      "whisperPrompt": {
+        "title": "Whisper 转录提示",
+        "presetLabel": "1. Choose by spoken language",
+        "textLabel": "2. Prompt sent to Whisper (editable)",
+        "presets": {
+          "ru": "Russian · punctuation",
+          "ruEn": "Russian + English terms · punctuation (recommended)",
+          "en": "English · punctuation",
+          "ruInstruction": "Russian · instruction (experimental)",
+          "ruEnInstruction": "Russian + English · instruction (experimental)",
+          "custom": "Custom prompt",
+          "none": "No style prompt (Custom Words still apply)"
+        },
+        "description": "仅供 Whisper 模型使用的可选文本上下文。会与自定义词汇合并，可能影响措辞和标点；这不是要求翻译或改写语音的指令。",
+        "placeholder": "例如：产品名称：Handy、Vulkan。英文词汇保持英文，并使用自然标点。"
+      },
       "voiceActivityDetection": {
         "title": "语音活动检测",
         "description": "过滤录音中的静音。支持流式的模型会使用更长的 VAD 尾段；停用 VAD 则会录制原始音频。"

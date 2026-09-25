@@ -197,10 +197,15 @@ impl AudioRecorder {
         let device = match device {
             Some(dev) => dev,
             None => match direction {
-                StreamDirection::Input => host.default_input_device(),
-                StreamDirection::Output => host.default_output_device(),
-            }
-            .ok_or_else(|| Error::new(std::io::ErrorKind::NotFound, "No audio device found"))?,
+                // A system-audio capture uses a WASAPI render device as an
+                // input stream; CPAL transparently enables loopback for it.
+                StreamDirection::Output => host.default_output_device().ok_or_else(|| {
+                    Error::new(std::io::ErrorKind::NotFound, "No output device found")
+                })?,
+                StreamDirection::Input => host.default_input_device().ok_or_else(|| {
+                    Error::new(std::io::ErrorKind::NotFound, "No input device found")
+                })?,
+            },
         };
 
         let thread_device = device.clone();

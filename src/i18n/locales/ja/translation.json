@@ -383,6 +383,22 @@
         "remove": "{{word}}を削除",
         "duplicate": "「{{word}}」は既に存在します"
       },
+      "whisperPrompt": {
+        "title": "Whisper の文字起こしプロンプト",
+        "presetLabel": "1. Choose by spoken language",
+        "textLabel": "2. Prompt sent to Whisper (editable)",
+        "presets": {
+          "ru": "Russian · punctuation",
+          "ruEn": "Russian + English terms · punctuation (recommended)",
+          "en": "English · punctuation",
+          "ruInstruction": "Russian · instruction (experimental)",
+          "ruEnInstruction": "Russian + English · instruction (experimental)",
+          "custom": "Custom prompt",
+          "none": "No style prompt (Custom Words still apply)"
+        },
+        "description": "Whisper モデル専用の任意のテキストコンテキストです。カスタム単語と組み合わされ、表現や句読点に影響する場合があります。音声を翻訳・書き換える指示ではありません。",
+        "placeholder": "例：製品名は Handy、Vulkan。英語の単語は英語のままにし、自然な句読点を使います。"
+      },
       "voiceActivityDetection": {
         "title": "音声区間検出 (VAD)",
         "description": "録音から無音部分を除去します。ストリーミング対応モデルはより長い音声検出区間を使用します。VAD を無効にすると音声をそのまま録音します。"

@@ -360,6 +360,22 @@
         "remove": "إزالة {{word}}",
         "duplicate": "\"{{word}}\" موجود بالفعل"
       },
+      "whisperPrompt": {
+        "title": "موجّه النسخ في Whisper",
+        "presetLabel": "1. Choose by spoken language",
+        "textLabel": "2. Prompt sent to Whisper (editable)",
+        "presets": {
+          "ru": "Russian · punctuation",
+          "ruEn": "Russian + English terms · punctuation (recommended)",
+          "en": "English · punctuation",
+          "ruInstruction": "Russian · instruction (experimental)",
+          "ruEnInstruction": "Russian + English · instruction (experimental)",
+          "custom": "Custom prompt",
+          "none": "No style prompt (Custom Words still apply)"
+        },
+        "description": "سياق نصي اختياري لنماذج Whisper فقط. يُدمج مع الكلمات المخصصة وقد يؤثر في الصياغة وعلامات الترقيم؛ وليس أمراً لترجمة الكلام أو إعادة صياغته.",
+        "placeholder": "مثال: أسماء المنتجات: Handy وVulkan. احتفظ بالكلمات الإنجليزية بالإنجليزية واستخدم علامات ترقيم طبيعية."
+      },
       "voiceActivityDetection": {
         "title": "كشف النشاط الصوتي",
         "description": "تصفية الصمت من التسجيلات. النماذج التي تدعم البث تستخدم فترة VAD أطول؛ وتعطيل VAD يسجّل الصوت الخام."

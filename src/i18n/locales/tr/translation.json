@@ -383,6 +383,22 @@
         "remove": "{{word}} Kaldır",
         "duplicate": "\"{{word}}\" zaten mevcut"
       },
+      "whisperPrompt": {
+        "title": "Whisper transkripsiyon istemi",
+        "presetLabel": "1. Choose by spoken language",
+        "textLabel": "2. Prompt sent to Whisper (editable)",
+        "presets": {
+          "ru": "Russian · punctuation",
+          "ruEn": "Russian + English terms · punctuation (recommended)",
+          "en": "English · punctuation",
+          "ruInstruction": "Russian · instruction (experimental)",
+          "ruEnInstruction": "Russian + English · instruction (experimental)",
+          "custom": "Custom prompt",
+          "none": "No style prompt (Custom Words still apply)"
+        },
+        "description": "Yalnızca Whisper modelleri için isteğe bağlı metin bağlamı. Özel sözcüklerle birleştirilir ve ifadeyi ve noktalama işaretlerini etkileyebilir; konuşmayı çevirme veya yeniden yazma talimatı değildir.",
+        "placeholder": "Örnek: Ürün adları: Handy, Vulkan. İngilizce sözcükleri İngilizce bırakın ve doğal noktalama kullanın."
+      },
       "voiceActivityDetection": {
         "title": "Ses Etkinliği Algılama",
         "description": "Kayıtlardaki sessizliği filtreler. Akış destekli modeller daha uzun bir VAD kuyruğu kullanır; VAD devre dışı bırakıldığında ham ses kaydedilir."
