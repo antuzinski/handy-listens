@@ -213,7 +213,7 @@
           "hold_or_toggle": "Hold to record or tap to toggle",
           "push_to_talk": "Records while you hold the shortcut",
           "toggle": "Tap the shortcut to start recording, tap again to stop"
-      }
+        }
       }
     },
     "models": {
@@ -721,11 +721,12 @@
   },
   "theme": {
     "title": "Application Theme",
-    "description": "Choose whether Handy follows your system theme or stays light or dark",
+    "description": "Choose the system, light, dark, or green appearance",
     "options": {
       "system": "System",
       "light": "Light",
-      "dark": "Dark"
+      "dark": "Dark",
+      "green": "Forest green"
     }
   },
   "overlay": {

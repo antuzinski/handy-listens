@@ -6,6 +6,14 @@
 
 Handy is a cross-platform desktop application that provides simple, privacy-focused speech transcription. Press a shortcut, speak, and have your words appear in any text field. This happens on your own computer without sending any information to the cloud.
 
+## О форке с live captions
+
+Это не отдельная программа, написанная с нуля, а форк [Handy](https://github.com/cjpais/Handy), исходного приложения для локальной транскрипции. Оригинальный Handy создан и развивается автором под GitHub-именем [cjpais](https://github.com/cjpais). Ветка [vscg/Handy `feat/live-captions`](https://github.com/vscg/Handy/tree/feat/live-captions) добавляет к нему захват и расшифровку системного звука в реальном времени; её автор в репозитории указан как [vscg](https://github.com/vscg).
+
+Форк также включает настройки и обработки для Whisper, вдохновлённые разбором [Егора Соколова о распознавании в Klava](https://egorsokolov.ru/ai/klava-nevinovata/): пользовательский промпт/контекст распознавания, словарь пользовательских слов, ограничение предыдущего контекста, фильтрацию повторов и типичных галлюцинаций, а также восстановление границ слов для Breeze. Соколов — автор описанных рекомендаций, а не разработчик Handy или этого форка. Бенчмарки из его статьи относятся к его сценарию и не являются результатами тестирования данного форка.
+
+По сравнению с upstream Handy эта сборка подходит тем, кому нужно распознавать не только микрофон, но и звук компьютера (например, собеседника в Zoom), настраивать словарь и поведение Whisper. Это не означает, что она всегда точнее или быстрее: результат зависит от модели, устройства и записи. Форк сохраняет базовые возможности Handy и развивается отдельно; обновления upstream следует интегрировать и собирать осознанно, чтобы не затереть эти изменения.
+
 ## Why Handy?
 
 Handy was created to fill the gap for a truly open source, extensible speech-to-text tool. As stated on [handy.computer](https://handy.computer):

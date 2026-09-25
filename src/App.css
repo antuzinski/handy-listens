@@ -45,11 +45,30 @@
   color: var(--color-text);
   background-color: var(--color-background);
   background-image:
-    linear-gradient(color-mix(in srgb, var(--color-text) 4%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--color-text) 4%, transparent) 1px, transparent 1px),
-    radial-gradient(ellipse at 12% 0%, color-mix(in srgb, var(--color-logo-primary) 14%, transparent), transparent 42%),
-    radial-gradient(ellipse at 88% 100%, color-mix(in srgb, var(--color-accent-cyan) 8%, transparent), transparent 40%);
-  background-size: 36px 36px, 36px 36px, auto, auto;
+    linear-gradient(
+      color-mix(in srgb, var(--color-text) 4%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--color-text) 4%, transparent) 1px,
+      transparent 1px
+    ),
+    radial-gradient(
+      ellipse at 12% 0%,
+      color-mix(in srgb, var(--color-logo-primary) 14%, transparent),
+      transparent 42%
+    ),
+    radial-gradient(
+      ellipse at 88% 100%,
+      color-mix(in srgb, var(--color-accent-cyan) 8%, transparent),
+      transparent 40%
+    );
+  background-size:
+    36px 36px,
+    36px 36px,
+    auto,
+    auto;
   background-attachment: fixed;
 }
 
@@ -99,15 +118,38 @@
   --color-error: var(--dark-color-error);
   --color-accent-cyan: var(--dark-color-accent-cyan);
   background-image:
-    linear-gradient(color-mix(in srgb, var(--color-text) 5%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--color-text) 5%, transparent) 1px, transparent 1px),
-    radial-gradient(ellipse at 12% 0%, color-mix(in srgb, var(--color-logo-primary) 17%, transparent), transparent 42%),
-    radial-gradient(ellipse at 88% 100%, color-mix(in srgb, var(--color-accent-cyan) 9%, transparent), transparent 40%);
+    linear-gradient(
+      color-mix(in srgb, var(--color-text) 5%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--color-text) 5%, transparent) 1px,
+      transparent 1px
+    ),
+    radial-gradient(
+      ellipse at 12% 0%,
+      color-mix(in srgb, var(--color-logo-primary) 17%, transparent),
+      transparent 42%
+    ),
+    radial-gradient(
+      ellipse at 88% 100%,
+      color-mix(in srgb, var(--color-accent-cyan) 9%, transparent),
+      transparent 40%
+    );
 }
 
 .settings-glass-panel {
-  background-color: color-mix(in srgb, var(--color-background) 84%, transparent) !important;
-  border-color: color-mix(in srgb, var(--color-logo-primary) 18%, transparent) !important;
+  background-color: color-mix(
+    in srgb,
+    var(--color-background) 84%,
+    transparent
+  ) !important;
+  border-color: color-mix(
+    in srgb,
+    var(--color-logo-primary) 18%,
+    transparent
+  ) !important;
   box-shadow: 0 14px 36px color-mix(in srgb, #050819 28%, transparent);
   backdrop-filter: blur(12px);
 }
@@ -117,13 +159,46 @@
 }
 
 .whisper-prompt-editor {
-  border-color: color-mix(in srgb, var(--color-logo-primary) 36%, var(--color-mid-gray));
-  background-color: color-mix(in srgb, var(--color-background) 82%, var(--color-logo-primary) 4%);
+  border-color: color-mix(
+    in srgb,
+    var(--color-logo-primary) 36%,
+    var(--color-mid-gray)
+  );
+  background-color: color-mix(
+    in srgb,
+    var(--color-background) 82%,
+    var(--color-logo-primary) 4%
+  );
 }
 
 .whisper-prompt-editor:focus {
   border-color: var(--color-logo-primary);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-logo-primary) 26%, transparent);
+  box-shadow: 0 0 0 2px
+    color-mix(in srgb, var(--color-logo-primary) 26%, transparent);
+}
+
+:root[data-theme="green"] {
+  --color-log-surface: color-mix(in srgb, var(--color-background), black 15%);
+  background-image:
+    linear-gradient(
+      color-mix(in srgb, var(--color-text) 5%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--color-text) 5%, transparent) 1px,
+      transparent 1px
+    ),
+    radial-gradient(
+      ellipse at 12% 0%,
+      color-mix(in srgb, var(--color-logo-primary) 17%, transparent),
+      transparent 42%
+    ),
+    radial-gradient(
+      ellipse at 88% 100%,
+      color-mix(in srgb, var(--color-accent-cyan) 9%, transparent),
+      transparent 40%
+    );
 }
 
 /* macOS - tint native overlay scrollbar thumb */

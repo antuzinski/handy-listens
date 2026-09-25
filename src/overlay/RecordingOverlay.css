@@ -86,7 +86,8 @@
   --s-hair: var(--light-s-hair);
 }
 
-:root[data-theme="dark"] {
+:root[data-theme="dark"],
+:root[data-theme="green"] {
   --s-accent-soft: var(--dark-s-accent-soft);
   --s-muted: var(--dark-s-muted);
   --s-faint: var(--dark-s-faint);

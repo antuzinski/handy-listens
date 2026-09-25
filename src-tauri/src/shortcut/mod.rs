@@ -589,6 +589,7 @@ pub fn change_theme_setting(app: AppHandle, theme: String) -> Result<(), String>
         "system" => Theme::System,
         "light" => Theme::Light,
         "dark" => Theme::Dark,
+        "green" => Theme::Green,
         other => {
             warn!("Invalid theme '{}', defaulting to system", other);
             Theme::System
@@ -618,7 +619,7 @@ pub fn apply_window_theme(app: &AppHandle, theme: Theme) {
     let window_theme = match theme {
         Theme::System => None,
         Theme::Light => Some(tauri::Theme::Light),
-        Theme::Dark => Some(tauri::Theme::Dark),
+        Theme::Dark | Theme::Green => Some(tauri::Theme::Dark),
     };
     if let Some(window) = app.get_webview_window("main") {
         if let Err(e) = window.set_theme(window_theme) {

@@ -14,6 +14,11 @@
   --dark-color-logo-primary: #e149ec;
   --dark-color-logo-stroke: #d7c2ff;
 
+  --green-color-text: #e5f5eb;
+  --green-color-background: #0b1711;
+  --green-color-logo-primary: #3fce8d;
+  --green-color-logo-stroke: #bdebd1;
+
   /* Semantic status colors. First used by SecureInputWarning; intended to
      replace the ad-hoc yellow-500/red-500 usages (e.g. ui/Alert.tsx) over
      time so status styling is themeable from one place. */
@@ -21,6 +26,8 @@
   --light-color-error: #dc2626;
   --dark-color-warning: #fbbf24;
   --dark-color-error: #f87171;
+  --green-color-warning: #f5c76b;
+  --green-color-error: #ff8585;
 
   /* Tokens that do not change between light and dark */
   --color-background-ui: #7132a8;
@@ -28,6 +35,7 @@
   --color-mid-gray: #8c91ad;
   --light-color-accent-cyan: #11aeb2;
   --dark-color-accent-cyan: #27d6da;
+  --green-color-accent-cyan: #72ddb0;
   --color-accent-cyan: var(--light-color-accent-cyan);
 
   /* Active palette — defaults to light, follows the OS via the media query
@@ -78,4 +86,15 @@
   --color-logo-stroke: var(--dark-color-logo-stroke);
   --color-warning: var(--dark-color-warning);
   --color-error: var(--dark-color-error);
+}
+
+:root[data-theme="green"] {
+  color-scheme: dark;
+  --color-text: var(--green-color-text);
+  --color-background: var(--green-color-background);
+  --color-logo-primary: var(--green-color-logo-primary);
+  --color-logo-stroke: var(--green-color-logo-stroke);
+  --color-warning: var(--green-color-warning);
+  --color-error: var(--green-color-error);
+  --color-accent-cyan: var(--green-color-accent-cyan);
 }
