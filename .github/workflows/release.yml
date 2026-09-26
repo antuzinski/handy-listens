@@ -73,11 +73,11 @@ jobs:
       platform: ${{ matrix.platform }}
       target: ${{ matrix.target }}
       build-args: ${{ matrix.args }}
-      sign-binaries: true
-      asset-prefix: "handy"
+      # Fork releases stay unsigned until its own signing key/certificates are configured.
+      sign-binaries: false
+      asset-prefix: "handy-listens"
       upload-artifacts: false
       release-id: ${{ needs.create-release.outputs.release-id }}
       # Releases always build from scratch — never restore the Rust cache, so a
       # stale cached native lib can never be linked into a shipped artifact.
       no-cache: true
-    secrets: inherit

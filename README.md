@@ -1,10 +1,8 @@
-# Handy
-
-[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/invite/WVBeWsNXK4)
+# Handy Listens
 
 **A free, open source, and extensible speech-to-text application that works completely offline.**
 
-Handy is a cross-platform desktop application that provides simple, privacy-focused speech transcription. Press a shortcut, speak, and have your words appear in any text field. This happens on your own computer without sending any information to the cloud.
+Handy Listens is a community-maintained fork of Handy for local speech transcription. Press a shortcut, speak, and have your words appear in any text field. Audio processing stays on your computer unless you explicitly choose a cloud-backed model.
 
 ## О форке с live captions
 
@@ -42,10 +40,7 @@ The process is entirely local:
 
 ### Installation
 
-1. Download the latest release from the [releases page](https://github.com/cjpais/Handy/releases) or the [website](https://handy.computer)
-   - **macOS**: Also available via [Homebrew cask](https://formulae.brew.sh/cask/handy): `brew install --cask handy`
-   - **Windows**: Also available via [winget](https://github.com/microsoft/winget-pkgs): `winget install cjpais.Handy` \
-     **Note:** The Homebrew cask and winget package are not maintained by the Handy developers.
+1. Download Handy Listens from its [releases page](https://github.com/antuzinski/handy-listens/releases). Until the first fork release is published, use the locally built executable; upstream Handy installers are separate and will not update this fork.
    - **Debian/Ubuntu**: Install the downloaded `.deb` with APT so required dependencies are installed automatically:
      ```bash
      sudo apt install ./Handy_*.deb

@@ -147,7 +147,11 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
       grouped={grouped}
     >
       <div className="flex items-center space-x-1">
-        <div className="relative" ref={dropdownRef}>
+        <div
+          className="relative"
+          ref={dropdownRef}
+          data-dropdown-open={isOpen ? "true" : undefined}
+        >
           <button
             type="button"
             className={`px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 rounded min-w-[200px] text-start flex items-center justify-between transition-all duration-150 ${

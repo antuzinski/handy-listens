@@ -18,6 +18,7 @@
   --green-color-background: #0b1711;
   --green-color-logo-primary: #3fce8d;
   --green-color-logo-stroke: #bdebd1;
+  --green-color-background-ui: #147a56;
 
   /* Semantic status colors. First used by SecureInputWarning; intended to
      replace the ad-hoc yellow-500/red-500 usages (e.g. ui/Alert.tsx) over
@@ -94,6 +95,7 @@
   --color-background: var(--green-color-background);
   --color-logo-primary: var(--green-color-logo-primary);
   --color-logo-stroke: var(--green-color-logo-stroke);
+  --color-background-ui: var(--green-color-background-ui);
   --color-warning: var(--green-color-warning);
   --color-error: var(--green-color-error);
   --color-accent-cyan: var(--green-color-accent-cyan);

@@ -1,0 +1,79 @@
+name: Check upstream releases
+
+on:
+  schedule:
+    - cron: "23 8 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Check Handy and Klava releases
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require("node:fs");
+            const baselines = JSON.parse(fs.readFileSync(".github/upstream-baselines.json", "utf8"));
+            const upstreams = [
+              { key: "handy", label: "Handy", notes: "Review upstream Handy changes and port compatible improvements without overwriting fork-specific features." },
+              { key: "klava-nevinovata", label: "Klava Nevinovata", notes: "Review Sokolov's fork changes and port relevant improvements selectively; do not merge its older Handy base wholesale." },
+            ];
+
+            const labels = await github.paginate(github.rest.issues.listLabelsForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+            if (!labels.some((label) => label.name === "upstream-review")) {
+              await github.rest.issues.createLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: "upstream-review",
+                color: "0e8a16",
+                description: "Review and selectively integrate upstream changes",
+              });
+            }
+
+            const existing = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "all",
+              per_page: 100,
+            });
+
+            for (const upstream of upstreams) {
+              const baseline = baselines[upstream.key];
+              const [owner, repo] = baseline.repository.split("/");
+              const { data: release } = await github.rest.repos.getLatestRelease({ owner, repo });
+              if (release.tag_name === baseline.release) continue;
+
+              const title = `Review ${upstream.label} release ${release.tag_name}`;
+              if (existing.some((issue) => !issue.pull_request && issue.title === title)) continue;
+
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body: [
+                  `A new upstream release was detected: **${release.tag_name}**.`,
+                  "",
+                  `Current integrated baseline: **${baseline.release}**.`,
+                  `Release notes: ${release.html_url}`,
+                  "",
+                  upstream.notes,
+                  "",
+                  "After reviewing and integrating changes, update this source's entry in `.github/upstream-baselines.json`.",
+                ].join("\n"),
+                labels: ["upstream-review"],
+              });
+            }

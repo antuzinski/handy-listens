@@ -154,6 +154,14 @@
   backdrop-filter: blur(12px);
 }
 
+/* Each glass panel forms its own stacking context because of backdrop-filter.
+   Raise the panel that owns an open menu above adjacent settings groups, so a
+   dropdown can paint over the next glass panel instead of disappearing behind it. */
+.settings-glass-panel:has([data-dropdown-open="true"]) {
+  position: relative;
+  z-index: 20;
+}
+
 .settings-glass-panel > .divide-y > * {
   border-color: color-mix(in srgb, var(--color-mid-gray) 16%, transparent);
 }
