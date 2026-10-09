@@ -1,5 +1,7 @@
 # Handy Listens
 
+Описание текущего форка, локальных артефактов и порядка обновления: [PROJECT_GUIDE.md](PROJECT_GUIDE.md).
+
 **A free, open source, and extensible speech-to-text application that works completely offline.**
 
 Handy Listens is a community-maintained fork of Handy for local speech transcription. Press a shortcut, speak, and have your words appear in any text field. Audio processing stays on your computer unless you explicitly choose a cloud-backed model.
