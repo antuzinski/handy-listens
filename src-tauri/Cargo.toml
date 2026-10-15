@@ -72,6 +72,7 @@ whatlang = "0.16"
 isolang = "2"
 chrono = "0.4"
 rusqlite = { version = "0.37", features = ["bundled"] }
+arboard = { version = "3.6", features = ["image-data"] }
 tar = "0.4.44"
 flate2 = "1.0"
 sha2 = "0.10"
@@ -188,6 +189,10 @@ transcribe-cpp = { version = "0.2.4", default-features = false, features = [
 [patch.crates-io]
 tao = { git = "https://github.com/cjpais/tao", rev = "c3bee28c1d446d95f08c95c3b6f8d4bde052b876" }
 tao-macros = { git = "https://github.com/cjpais/tao", rev = "c3bee28c1d446d95f08c95c3b6f8d4bde052b876" }
+# handy-keys fork (from klava-nevinovata): vanilla 0.3.4 + Windows hook-thread
+# priority + modifier_resync_count() telemetry consumed by watchdog.rs.
+# Reviewed 2026-10-16: 51-line diff against 0.3.4, no I/O or network.
+handy-keys = { git = "https://github.com/egsok/handy-keys-fork.git", rev = "2a1ae0b6d214470f3d95c4e5d71ce38f30e518ec" }
 
 [dev-dependencies]
 tempfile = "3"

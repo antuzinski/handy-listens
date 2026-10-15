@@ -2,17 +2,157 @@ use crate::input::{self, EnigoState};
 #[cfg(target_os = "linux")]
 use crate::settings::TypingTool;
 use crate::settings::{get_settings, AutoSubmitKey, ClipboardHandling, PasteMethod};
+use arboard::Clipboard as ArboardClipboard;
 use enigo::{Direction, Enigo, Key, Keyboard};
-use log::info;
+use log::{info, warn};
+use std::borrow::Cow;
 use std::process::Command;
 #[cfg(target_os = "linux")]
 use std::sync::OnceLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 #[cfg(target_os = "linux")]
 use crate::utils::{is_gnome_wayland, is_kde_wayland, is_wayland};
+
+enum SavedClipboard {
+    Files(Vec<std::path::PathBuf>),
+    Image {
+        rgba: Vec<u8>,
+        width: usize,
+        height: usize,
+    },
+    Html {
+        html: String,
+        alt_text: Option<String>,
+    },
+    Text(String),
+    Empty,
+    Unavailable,
+}
+
+/// Reads one clipboard format, logging a warning when the read is slow.
+/// `GetClipboardData` for delayed-rendered formats synchronously asks the
+/// clipboard-owner application to produce the data; if that app is hung or
+/// suspended the read can block for a very long time — knowing WHICH format
+/// stalled identifies the guilty app.
+fn timed_read<T>(format: &'static str, read: impl FnOnce() -> T) -> T {
+    let start = Instant::now();
+    let result = read();
+    let elapsed = start.elapsed();
+    if elapsed > Duration::from_millis(200) {
+        warn!(
+            "save_clipboard: reading {} took {:?} — clipboard owner app is slow to render",
+            format, elapsed
+        );
+    }
+    result
+}
+
+fn save_clipboard() -> SavedClipboard {
+    let Ok(mut clipboard) = ArboardClipboard::new() else {
+        return SavedClipboard::Unavailable;
+    };
+
+    if let Ok(files) = timed_read("file_list", || clipboard.get().file_list()) {
+        if !files.is_empty() {
+            return SavedClipboard::Files(files);
+        }
+    }
+    if let Ok(image) = timed_read("image", || clipboard.get().image()) {
+        return SavedClipboard::Image {
+            rgba: image.bytes.into_owned(),
+            width: image.width,
+            height: image.height,
+        };
+    }
+    if let Ok(html) = timed_read("html", || clipboard.get().html()) {
+        if !html.is_empty() {
+            let alt = timed_read("text", || clipboard.get().text()).ok();
+            return SavedClipboard::Html {
+                html,
+                alt_text: alt,
+            };
+        }
+    }
+    match timed_read("text", || clipboard.get().text()) {
+        Ok(text) if !text.is_empty() => SavedClipboard::Text(text),
+        _ => SavedClipboard::Empty,
+    }
+}
+
+/// How long `paste()` is willing to wait for the clipboard snapshot before
+/// giving up on clipboard restore for this paste. Normal reads finish in
+/// single-digit milliseconds; hitting this budget means the clipboard owner
+/// is not responding (hung or OS-suspended app).
+const SAVE_CLIPBOARD_TIMEOUT: Duration = Duration::from_millis(1000);
+
+/// Runs `save_clipboard` on a worker thread with a timeout so a
+/// non-responding clipboard owner cannot freeze the caller (paste runs on
+/// the main thread — blocking it deafens the whole hotkey pipeline, because
+/// tray/overlay updates are proxied through the main thread).
+fn save_clipboard_with_timeout() -> SavedClipboard {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(save_clipboard());
+    });
+    match rx.recv_timeout(SAVE_CLIPBOARD_TIMEOUT) {
+        Ok(saved) => saved,
+        Err(_) => {
+            warn!(
+                "save_clipboard timed out after {:?}; pasting WITHOUT clipboard restore \
+                 (previous clipboard content will be replaced by the transcription)",
+                SAVE_CLIPBOARD_TIMEOUT
+            );
+            SavedClipboard::Unavailable
+        }
+    }
+}
+
+fn restore_clipboard(saved: SavedClipboard) {
+    match saved {
+        SavedClipboard::Unavailable => {}
+        SavedClipboard::Empty => {
+            if let Ok(mut clipboard) = ArboardClipboard::new() {
+                let _ = clipboard.clear();
+            }
+        }
+        SavedClipboard::Text(text) => {
+            #[cfg(target_os = "linux")]
+            if is_wayland() && is_wl_copy_available() {
+                let _ = write_clipboard_via_wl_copy(&text);
+                return;
+            }
+            if let Ok(mut clipboard) = ArboardClipboard::new() {
+                let _ = clipboard.set_text(&text);
+            }
+        }
+        SavedClipboard::Image {
+            rgba,
+            width,
+            height,
+        } => {
+            if let Ok(mut clipboard) = ArboardClipboard::new() {
+                let _ = clipboard.set_image(arboard::ImageData {
+                    bytes: Cow::Owned(rgba),
+                    width,
+                    height,
+                });
+            }
+        }
+        SavedClipboard::Html { html, alt_text } => {
+            if let Ok(mut clipboard) = ArboardClipboard::new() {
+                let _ = clipboard.set_html(&html, alt_text.as_ref());
+            }
+        }
+        SavedClipboard::Files(files) => {
+            if let Ok(mut clipboard) = ArboardClipboard::new() {
+                let _ = clipboard.set().file_list(&files);
+            }
+        }
+    }
+}
 
 fn with_enigo<T>(
     app_handle: &AppHandle,
@@ -44,10 +184,12 @@ fn write_text_to_clipboard(app_handle: &AppHandle, text: &str) -> Result<(), Str
 fn finish_clipboard_paste(
     paste_result: Result<(), String>,
     paste_delay_after_ms: u64,
-    restore_clipboard: impl FnOnce(),
+    restore_clipboard: impl FnOnce() + Send + 'static,
 ) -> Result<(), String> {
-    std::thread::sleep(Duration::from_millis(paste_delay_after_ms));
-    restore_clipboard();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(paste_delay_after_ms));
+        restore_clipboard();
+    });
     paste_result
 }
 
@@ -58,16 +200,15 @@ fn paste_via_clipboard(
     paste_method: &PasteMethod,
     paste_delay_ms: u64,
     paste_delay_after_ms: u64,
+    restore: bool,
 ) -> Result<(), String> {
-    let clipboard = app_handle.clipboard();
-    let saved_text = clipboard.read_text().ok().filter(|t| !t.is_empty());
-    // Only probe for an image when there is no text to restore. Text is by far the
-    // common case, and reading an image decodes the full bitmap, so this keeps the
-    // text path exactly as cheap as it was before.
-    let saved_image = if saved_text.is_none() {
-        clipboard.read_image().ok().map(|image| image.to_owned())
+    // When the user wants the transcription to stay on the clipboard
+    // (CopyToClipboard), restoring the old content right after would undo
+    // that — skip the snapshot entirely.
+    let saved = if restore {
+        save_clipboard_with_timeout()
     } else {
-        None
+        SavedClipboard::Unavailable
     };
 
     // Write text to clipboard first
@@ -75,8 +216,7 @@ fn paste_via_clipboard(
 
     std::thread::sleep(Duration::from_millis(paste_delay_ms));
 
-    // Capture key injection errors so the original clipboard is restored before
-    // propagating them to the caller.
+    // Capture key injection errors so restoration is scheduled on both paths.
     let paste_result = (|| -> Result<(), String> {
         // Send paste key combo
         #[cfg(target_os = "linux")]
@@ -100,19 +240,18 @@ fn paste_via_clipboard(
         Ok(())
     })();
 
-    finish_clipboard_paste(paste_result, paste_delay_after_ms, || {
-        // Restore original clipboard content even when key injection failed.
-        // Text takes priority so this path stays identical to the previous behavior;
-        // an image is only restored when the clipboard held no text at all, which is
-        // the case that used to silently wipe screenshots.
-        if let Some(clipboard_content) = saved_text {
-            let _ = write_text_to_clipboard(app_handle, &clipboard_content);
-        } else if let Some(image) = saved_image {
-            info!("Restoring image to clipboard");
-            let _ = clipboard.write_image(&image);
-        } else {
-            // Nothing was there to begin with — don't leave the transcription behind.
-            let _ = clipboard.clear();
+    if matches!(saved, SavedClipboard::Unavailable) {
+        return paste_result;
+    }
+
+    // Preserve every supported clipboard format even when key injection fails.
+    // Restoration stays off the main thread so a slow clipboard owner cannot
+    // freeze the hotkey pipeline.
+    finish_clipboard_paste(paste_result, paste_delay_after_ms, move || {
+        let start = Instant::now();
+        restore_clipboard(saved);
+        if start.elapsed() > Duration::from_millis(500) {
+            warn!("restore_clipboard took {:?}", start.elapsed());
         }
     })
 }
@@ -828,12 +967,14 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
                     }
                 }
             }
+            let restore = settings.clipboard_handling != ClipboardHandling::CopyToClipboard;
             paste_via_clipboard(
                 &text,
                 &app_handle,
                 &paste_method,
                 paste_delay_ms,
                 paste_delay_after_ms,
+                restore,
             )?
         }
         PasteMethod::ExternalScript => {
@@ -866,7 +1007,6 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::Cell;
 
     #[cfg(target_os = "linux")]
     const YDOTOOL_0_1_8_HELP: &str = r#"
@@ -965,14 +1105,21 @@ e.g. 28:1 28:0 means pressing on the Enter button on a standard US keyboard.
     }
 
     #[test]
-    fn clipboard_is_restored_before_key_injection_error_is_returned() {
-        let restored = Cell::new(false);
-        let result = finish_clipboard_paste(Err("input failed".into()), 0, || {
-            restored.set(true);
-        });
-
-        assert_eq!(result.unwrap_err(), "input failed");
-        assert!(restored.get());
+    fn clipboard_restore_survives_injection_failure_without_blocking_the_caller() {
+        for paste_result in [Ok(()), Err("input failed".to_string())] {
+            let expected = paste_result.clone();
+            let (release_tx, release_rx) = std::sync::mpsc::channel();
+            let (restored_tx, restored_rx) = std::sync::mpsc::channel();
+            let result = finish_clipboard_paste(paste_result, 0, move || {
+                // A clipboard owner may block. The caller must remain free to
+                // process hotkeys while restoration waits on that owner.
+                release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                restored_tx.send(()).unwrap();
+            });
+            assert_eq!(result, expected);
+            release_tx.send(()).unwrap();
+            restored_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        }
     }
 
     #[cfg(unix)]

@@ -153,6 +153,11 @@ pub fn unregister_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<
         }
     };
 
+    // Hook recovery may already have cleared this registration. Treat that as
+    // success so cancel reconciliation can register the replacement binding.
+    if !app.global_shortcut().is_registered(shortcut) {
+        return Ok(());
+    }
     app.global_shortcut().unregister(shortcut).map_err(|e| {
         let error_msg = format!(
             "Failed to unregister shortcut '{}': {}",

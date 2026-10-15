@@ -1,10 +1,12 @@
 use crate::utils;
 use log::{debug, warn};
+use once_cell::sync::Lazy;
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use specta::Type;
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::Mutex;
 use tauri::AppHandle;
 use tauri_plugin_store::StoreExt;
 
@@ -639,11 +641,14 @@ fn default_auto_submit() -> bool {
 }
 
 fn default_history_limit() -> usize {
-    5
+    20
 }
 
+// Fork default: `PreserveLimit` silently hard-deletes recordings past the
+// limit (no Recycle Bin), which once wiped a training dataset when a settings
+// reset restored this default. `Never` makes data loss opt-in.
 fn default_recording_retention_period() -> RecordingRetentionPeriod {
-    RecordingRetentionPeriod::PreserveLimit
+    RecordingRetentionPeriod::Never
 }
 
 fn default_audio_feedback_volume() -> f32 {
@@ -1117,6 +1122,56 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
     settings
 }
 
+/// Serializes the read-modify-write of the settings store across the whole
+/// process. `get_settings`/`write_settings` each take the store's own lock,
+/// but that lock does NOT span read->modify->write, so two concurrent mutators
+/// can lost-update each other. Holding this mutex across the entire RMW closes
+/// that race. Guards ordering only — the store still owns the data. Note that
+/// `get_settings` may itself persist migrations; that write happens under this
+/// lock too when reached through the helpers below.
+static SETTINGS_WRITE_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+/// Atomically read-modify-write the settings store.
+///
+/// Holds `SETTINGS_WRITE_LOCK` across a fresh `get_settings` -> `f` ->
+/// `write_settings`, so overlapping updates serialize and no field is lost.
+///
+/// The closure runs WHILE THE LOCK IS HELD. Keep it short and side-effect-free:
+/// never call `get_settings`/`write_settings`/`update_settings*` from inside it
+/// (re-entrant lock = deadlock), and do not block on I/O, model loads, network,
+/// or thread spawns — compute those before and capture the result.
+pub fn update_settings_with<R>(app: &AppHandle, f: impl FnOnce(&mut AppSettings) -> R) -> R {
+    // A poisoned lock on a `()` guard carries no invalid state — recover it.
+    let _guard = SETTINGS_WRITE_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let mut settings = get_settings(app);
+    let result = f(&mut settings);
+    write_settings(app, settings);
+    result
+}
+
+/// Convenience wrapper for the common no-return case.
+pub fn update_settings(app: &AppHandle, f: impl FnOnce(&mut AppSettings)) {
+    update_settings_with(app, f);
+}
+
+/// Fallible variant: writes ONLY when the closure returns `Ok`. Use for
+/// conditional-error commands where `Err` must mean "do not persist" (e.g.
+/// post-process prompt CRUD that validates before mutating).
+pub fn try_update_settings_with<T, E>(
+    app: &AppHandle,
+    f: impl FnOnce(&mut AppSettings) -> Result<T, E>,
+) -> Result<T, E> {
+    let _guard = SETTINGS_WRITE_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let mut settings = get_settings(app);
+    let result = f(&mut settings)?;
+    write_settings(app, settings);
+    Ok(result)
+}
+
 /// Rebuilds settings from a store value that failed to deserialize as a whole.
 /// Every stored field that is individually valid is kept; only broken values
 /// (e.g. an enum variant written by a newer or older version) fall back to
@@ -1497,6 +1552,95 @@ mod tests {
     }
 
     #[test]
+    fn fork_v0_9_5_preferences_survive_gpu_migration_and_reload() {
+        // A frozen subset of the fork's persisted format: a device-index
+        // migration must not reset dictation preferences or delete recordings.
+        let stored = serde_json::json!({
+            "settings_schema_version": 1,
+            "transcribe_accelerator": "gpu",
+            "transcribe_gpu_device": 2,
+            "whisper_prompt": "Термины: Kubernetes, OpenAI. Сохраняй пунктуацию.",
+            "bindings": {
+                "transcribe": {
+                    "id": "transcribe",
+                    "name": "Transcribe",
+                    "description": "Converts your speech into text.",
+                    "default_binding": "ctrl+space",
+                    "current_binding": "ctrl+alt+space"
+                }
+            },
+            "push_to_talk": false,
+            "selected_model": "breeze-asr",
+            "selected_language": "ru",
+            "app_language": "ru",
+            "custom_words": ["Kubernetes", "OpenAI"],
+            "custom_filler_words": [],
+            "history_limit": 20,
+            "recording_retention_period": "never",
+            "clipboard_handling": "dont_modify",
+            "selected_microphone": "USB Microphone",
+            "overlay_style": "live",
+            "onboarding_completed": true,
+            "whats_new_last_seen_version": "0.9.5-6"
+        });
+        let mut settings: AppSettings = serde_json::from_value(stored.clone())
+            .expect("fork settings must parse strictly without a reset or salvage");
+
+        assert!(apply_settings_migrations(&mut settings, &stored));
+        assert_eq!(settings.transcribe_gpu_device, None);
+        assert_eq!(
+            settings.transcribe_accelerator,
+            TranscribeAcceleratorSetting::Auto
+        );
+        assert_eq!(
+            settings.settings_schema_version,
+            CURRENT_SETTINGS_SCHEMA_VERSION
+        );
+        assert_eq!(
+            settings.recording_retention_period,
+            RecordingRetentionPeriod::Never
+        );
+        assert!(settings.filler_word_removal_enabled);
+
+        assert_eq!(settings.shortcut_activation, ShortcutActivation::Toggle);
+        let migrated = serde_json::to_value(&settings).unwrap();
+        assert!(migrated.get("push_to_talk").is_none());
+        for (key, value) in stored.as_object().unwrap() {
+            if !matches!(
+                key.as_str(),
+                "settings_schema_version"
+                    | "transcribe_accelerator"
+                    | "transcribe_gpu_device"
+                    | "push_to_talk"
+            ) {
+                assert_eq!(
+                    &migrated[key], value,
+                    "migration changed fork preference {key}"
+                );
+            }
+        }
+
+        // A second startup reads the migrated store and makes no further changes.
+        let mut reloaded: AppSettings = serde_json::from_value(migrated.clone()).unwrap();
+        assert!(!apply_settings_migrations(&mut reloaded, &migrated));
+        assert_eq!(serde_json::to_value(&reloaded).unwrap(), migrated);
+
+        // Selecting a GPU after migration persists its stable identity through
+        // another restart instead of treating the string as an old ordinal.
+        let stable_device = r#"["vulkan","id","0000:01:00.0"]"#;
+        reloaded.transcribe_accelerator = TranscribeAcceleratorSetting::Gpu;
+        reloaded.transcribe_gpu_device = Some(stable_device.to_string());
+        let selected = serde_json::to_value(&reloaded).unwrap();
+        let mut reloaded: AppSettings = serde_json::from_value(selected.clone()).unwrap();
+        assert!(!apply_settings_migrations(&mut reloaded, &selected));
+        assert_eq!(
+            reloaded.transcribe_gpu_device.as_deref(),
+            Some(stable_device)
+        );
+        assert_eq!(serde_json::to_value(&reloaded).unwrap(), selected);
+    }
+
+    #[test]
     fn salvage_preserves_valid_fields_when_one_value_is_invalid() {
         let mut stored = default_settings_json();
         let map = stored.as_object_mut().unwrap();
@@ -1666,6 +1810,32 @@ mod tests {
             assert_eq!(settings.selected_language, language);
             assert_eq!(settings.chinese_script, script);
         }
+    }
+
+    #[test]
+    fn chinese_script_upgrade_preserves_fork_profile_and_is_idempotent() {
+        let mut stored = default_settings_json();
+        stored.as_object_mut().unwrap().remove("chinese_script");
+        stored["selected_language"] = serde_json::json!("ru");
+        stored["whisper_prompt"] = serde_json::json!("Keep Kubernetes and punctuation.");
+        stored["recording_retention_period"] = serde_json::json!("never");
+        stored["model_unload_timeout"] = serde_json::json!("never");
+        stored["history_limit"] = serde_json::json!(20);
+        let mut settings: AppSettings = serde_json::from_value(stored.clone()).unwrap();
+        assert!(apply_settings_migrations(&mut settings, &stored));
+        assert_eq!(settings.chinese_script, ChineseScript::AsTranscribed);
+        let migrated = serde_json::to_value(&settings).unwrap();
+        for key in [
+            "selected_language",
+            "whisper_prompt",
+            "recording_retention_period",
+            "model_unload_timeout",
+            "history_limit",
+        ] {
+            assert_eq!(migrated[key], stored[key], "changed fork preference {key}");
+        }
+        assert!(!apply_settings_migrations(&mut settings, &migrated));
+        assert_eq!(serde_json::to_value(&settings).unwrap(), migrated);
     }
 
     #[test]

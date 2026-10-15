@@ -25,6 +25,10 @@ mod transcription_coordinator;
 mod tray;
 mod tray_i18n;
 mod utils;
+mod watchdog;
+
+/// User-facing product name; keep in sync with tauri.conf.json's productName.
+pub const APP_NAME: &str = "Handy Listens";
 
 pub use cli::CliArgs;
 #[cfg(debug_assertions)]
@@ -1015,6 +1019,11 @@ pub fn run(cli_args: CliArgs) {
             app.manage(TranscriptionCoordinator::new(app_handle.clone()));
 
             initialize_core_logic(&app_handle);
+
+            // Monitor the hotkey pipeline threads for stalls (the
+            // intermittent "hotkey deafness" bug) and auto-recover the
+            // keyboard hook when its manager thread stops responding.
+            watchdog::start(app_handle.clone());
 
             // Secure Input monitor (macOS): detects stuck secure input that
             // silently blocks keyed shortcuts, warns the user, and activates
