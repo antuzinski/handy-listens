@@ -124,17 +124,20 @@ fn should_use_streaming_overlay(style: OverlayStyle, is_streaming: bool) -> bool
     style == OverlayStyle::Live && is_streaming
 }
 
-async fn post_process_transcription(settings: &AppSettings, transcription: &str) -> Option<String> {
+async fn post_process_transcription(
+    settings: &AppSettings,
+    transcription: &str,
+) -> Result<Option<String>, String> {
     if is_blank_transcription(transcription) {
         debug!("Post-processing skipped because the transcription is empty");
-        return None;
+        return Ok(None);
     }
 
     let provider = match settings.active_post_process_provider().cloned() {
         Some(provider) => provider,
         None => {
             debug!("Post-processing enabled but no provider is selected");
-            return None;
+            return Ok(None);
         }
     };
 
@@ -149,14 +152,14 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
             "Post-processing skipped because provider '{}' has no model configured",
             provider.id
         );
-        return None;
+        return Ok(None);
     }
 
     let selected_prompt_id = match &settings.post_process_selected_prompt_id {
         Some(id) => id.clone(),
         None => {
             debug!("Post-processing skipped because no prompt is selected");
-            return None;
+            return Ok(None);
         }
     };
 
@@ -171,13 +174,16 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
                 "Post-processing skipped because prompt '{}' was not found",
                 selected_prompt_id
             );
-            return None;
+            return Ok(None);
         }
     };
+    // The built-in dictionary cleanup prompt lives in cleanup_prompt.txt, and
+    // any prompt may reference the dictionary through ${dictionary}.
+    let prompt = crate::dictionary::resolve_llm_prompt(&selected_prompt_id, prompt);
 
     if prompt.trim().is_empty() {
         debug!("Post-processing skipped because the selected prompt is empty");
-        return None;
+        return Ok(None);
     }
 
     debug!(
@@ -210,7 +216,7 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
                     debug!(
                         "Apple Intelligence selected but not currently available on this device"
                     );
-                    return None;
+                    return Ok(None);
                 }
 
                 let token_limit = model.trim().parse::<i32>().unwrap_or(0);
@@ -222,19 +228,19 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
                     Ok(result) => {
                         if result.trim().is_empty() {
                             debug!("Apple Intelligence returned an empty response");
-                            None
+                            Ok(None)
                         } else {
                             let result = strip_invisible_chars(&result);
                             debug!(
                                 "Apple Intelligence post-processing succeeded. Output length: {} chars",
                                 result.len()
                             );
-                            Some(result)
+                            Ok(Some(result))
                         }
                     }
                     Err(err) => {
                         error!("Apple Intelligence post-processing failed: {}", err);
-                        None
+                        Err(err.to_string())
                     }
                 };
             }
@@ -242,7 +248,7 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
             #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
             {
                 debug!("Apple Intelligence provider selected on unsupported platform");
-                return None;
+                return Ok(None);
             }
         }
 
@@ -284,10 +290,10 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
                                 provider.id,
                                 result.len()
                             );
-                            return Some(result);
+                            return Ok(Some(result));
                         } else {
                             error!("Structured output response missing 'transcription' field");
-                            return Some(strip_invisible_chars(content));
+                            return Ok(Some(strip_invisible_chars(content)));
                         }
                     }
                     Err(e) => {
@@ -295,13 +301,13 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
                             "Failed to parse structured output JSON: {}. Returning raw content.",
                             e
                         );
-                        return Some(strip_invisible_chars(content));
+                        return Ok(Some(strip_invisible_chars(content)));
                     }
                 }
             }
             Ok(None) => {
                 error!("LLM API response has no content");
-                return None;
+                return Err("LLM API response has no content".to_string());
             }
             Err(e) => {
                 warn!(
@@ -333,11 +339,11 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
                 provider.id,
                 content.len()
             );
-            Some(content)
+            Ok(Some(content))
         }
         Ok(None) => {
             error!("LLM API response has no content");
-            None
+            Err("LLM API response has no content".to_string())
         }
         Err(e) => {
             error!(
@@ -345,7 +351,7 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
                 provider.id,
                 e
             );
-            None
+            Err(e.to_string())
         }
     }
 }
@@ -367,7 +373,16 @@ pub(crate) async fn process_transcription_output(
     let mut post_process_prompt: Option<String> = None;
 
     if post_process {
-        if let Some(processed_text) = post_process_transcription(&settings, &final_text).await {
+        let outcome = match post_process_transcription(&settings, &final_text).await {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                // The raw transcription is still pasted; make the fallback
+                // visible instead of silently skipping the cleanup.
+                let _ = app.emit("post-process-error", error);
+                None
+            }
+        };
+        if let Some(processed_text) = outcome {
             post_processed_text = Some(processed_text.clone());
             final_text = processed_text;
 

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { ShowOverlay } from "../ShowOverlay";
 import { ModelUnloadTimeoutSetting } from "../ModelUnloadTimeout";
 import { CustomWords } from "../CustomWords";
+import { DictionaryFiles } from "../DictionaryFiles";
 import { WhisperPrompt } from "../WhisperPrompt";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { StartHidden } from "../StartHidden";
@@ -55,6 +56,7 @@ export const AdvancedSettings: React.FC = () => {
         <WhisperPrompt descriptionMode="inline" grouped />
         <ChineseScriptSetting descriptionMode="tooltip" grouped={true} />
         <CustomWords descriptionMode="inline" grouped />
+        <DictionaryFiles descriptionMode="inline" grouped />
         <AppendTrailingSpace descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
 

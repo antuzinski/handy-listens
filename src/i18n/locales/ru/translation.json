@@ -383,6 +383,22 @@
         "remove": "Удалить {{word}}",
         "duplicate": "\"{{word}}\" уже существует"
       },
+      "dictionary": {
+        "title": "Словарь",
+        "description": "Как писать ← как слышит распознавание. Один файл работает в подсказке Whisper, в точных заменах на любом языке и в LLM-чистке. Изменения действуют со следующей диктовки.",
+        "openDictionary": "Открыть словарь",
+        "openCleanupPrompt": "Открыть промпт чистки",
+        "openFolder": "Открыть папку",
+        "reset": "Сбросить к стандартному",
+        "resetTitle": "Сброс словаря",
+        "resetConfirm": "Заменить dictionary.txt стандартным? Текущий файл сохранится как dictionary.txt.bak.",
+        "resetDone": "Словарь сброшен, прежний файл сохранён как dictionary.txt.bak",
+        "status": "Строк: {{entries}} · с условием (только LLM): {{conditional}} · в подсказке Whisper: {{inPrompt}} из {{terms}} терминов",
+        "error": "Строка {{line}}: {{message}}",
+        "previewPlaceholder": "Введите фразу, чтобы проверить замены",
+        "preview": "Проверить",
+        "previewResult": "После замен:"
+      },
       "whisperPrompt": {
         "title": "Промпт для Whisper",
         "description": "Используется только моделями семейства Whisper (включая Turbo и Breeze) — и для диктовки, и для живых субтитров. Выбирайте пресет по языку речи: для полностью английской записи не используйте русский промпт. Другие модели, например Nemotron, это поле игнорируют.",
@@ -707,7 +723,9 @@
     "modelLoadFailedUnknown": "неизвестная модель",
     "pasteFailedTitle": "Не удалось вставить текст",
     "pasteFailed": "Не удалось вставить текст в активное приложение.",
-    "transcriptionFailedTitle": "Ошибка транскрипции"
+    "transcriptionFailedTitle": "Ошибка транскрипции",
+    "postProcessFailedTitle": "Чистка текста не удалась",
+    "postProcessFailed": "Вставлен исходный текст. Причина: {{error}}"
   },
   "appLanguage": {
     "title": "Язык приложения",

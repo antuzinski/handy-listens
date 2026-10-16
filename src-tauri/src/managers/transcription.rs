@@ -931,11 +931,12 @@ impl TranscriptionManager {
         let settings = get_settings(&self.app_handle);
         let effective_language =
             effective_language_for_model(&settings, self.model_manager.as_ref(), &model_id);
-        let whisper_prompt = build_whisper_prompt(
+        let dictionary = crate::dictionary::refresh(&self.app_handle);
+        let (whisper_prompt, _) = dictionary.extend_whisper_prompt(build_whisper_prompt(
             &settings.whisper_prompt,
             &settings.custom_words,
             &settings.whisper_prompt_preset,
-        );
+        ));
         let whisper_extension = match &engine {
             LoadedEngine::TranscribeCpp(session) if session.model().arch() == "whisper" => {
                 Some(RunExtension::Whisper(WhisperRunOptions {
@@ -1159,6 +1160,7 @@ impl TranscriptionManager {
         };
 
         let settings = get_settings(&self.app_handle);
+        crate::dictionary::refresh(&self.app_handle);
         // Streaming models do not receive a decode prompt, so custom words
         // always go through the shared fuzzy post-correction path.
         let filtered = post_process_transcription_text(
@@ -1254,11 +1256,12 @@ impl TranscriptionManager {
         // back to settings, so the intent survives switching models and back.
         let validated_language =
             effective_language_for_model(&settings, self.model_manager.as_ref(), &active_model);
-        let whisper_prompt = build_whisper_prompt(
+        let dictionary = crate::dictionary::refresh(&self.app_handle);
+        let (whisper_prompt, _) = dictionary.extend_whisper_prompt(build_whisper_prompt(
             &settings.whisper_prompt,
             &settings.custom_words,
             &settings.whisper_prompt_preset,
-        );
+        ));
         if validated_language != settings.selected_language {
             debug!(
                 "Language intent '{}' resolved to '{}' for model '{}'",
@@ -1877,6 +1880,9 @@ fn post_process_transcription_text(
         } else {
             raw
         };
+        // Dictionary file replacements work for any script and every model,
+        // including whisper, whose custom words only reach the decode prompt.
+        let corrected = crate::dictionary::current().apply(&corrected);
 
         let without_fillers = remove_filler_words(
             &corrected,

@@ -181,6 +181,18 @@ function App() {
     };
   }, [t]);
 
+  // LLM cleanup failed: the raw transcription was pasted instead.
+  useEffect(() => {
+    const unlisten = listen<string>("post-process-error", (event) => {
+      toast.error(t("errors.postProcessFailedTitle"), {
+        description: t("errors.postProcessFailed", { error: event.payload }),
+      });
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [t]);
+
   // Listen for transcription failures and show a toast.
   // The payload is the backend error message (also logged to handy.log).
   useEffect(() => {
