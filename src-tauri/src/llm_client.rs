@@ -172,13 +172,40 @@ fn build_headers(provider: &PostProcessProvider, api_key: &str) -> Result<Header
     Ok(headers)
 }
 
+/// A stuck API must not hold the paste forever: after this the raw
+/// transcription is pasted and the failure is reported.
+const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Clients are reused per provider and key so consecutive dictations keep a
+/// warm connection instead of repeating the TCP and TLS handshakes.
+static CLIENTS: OnceLock<
+    Mutex<std::collections::HashMap<(String, String, String), reqwest::Client>>,
+> = OnceLock::new();
+
 /// Create an HTTP client with provider-specific headers
 fn create_client(provider: &PostProcessProvider, api_key: &str) -> Result<reqwest::Client, String> {
+    let key = (
+        provider.id.clone(),
+        provider.base_url.clone(),
+        api_key.to_string(),
+    );
+    let clients = CLIENTS.get_or_init(Default::default);
+    if let Some(client) = clients.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
+        return Ok(client.clone());
+    }
     let headers = build_headers(provider, api_key)?;
-    reqwest::Client::builder()
+    let client = reqwest::Client::builder()
         .default_headers(headers)
+        .timeout(REQUEST_TIMEOUT)
+        .connect_timeout(CONNECT_TIMEOUT)
         .build()
-        .map_err(|e| report_reqwest_error("Failed to build HTTP client", &e))
+        .map_err(|e| report_reqwest_error("Failed to build HTTP client", &e))?;
+    clients
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(key, client.clone());
+    Ok(client)
 }
 
 /// Format a bounded error source chain.

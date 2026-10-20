@@ -179,6 +179,10 @@
           "transcribe_with_post_process": {
             "name": "Snabbkommando för efterbearbetning",
             "description": "Valfritt: En dedikerad snabbknapp som alltid tillämpar AI-efterbearbetning på din transkription."
+          },
+          "caption": {
+            "name": "Caption Shortcut",
+            "description": "The keyboard shortcut to capture and transcribe your voice and system audio."
           }
         },
         "errors": {
@@ -207,6 +211,9 @@
           "push_to_talk": "Spelar in så länge du håller genvägen nedtryckt",
           "toggle": "Tryck på genvägen för att starta inspelningen, tryck igen för att stoppa"
         }
+      },
+      "liveCaptions": {
+        "title": "Live Captions"
       }
     },
     "models": {
@@ -256,6 +263,12 @@
       "volume": {
         "title": "Volym",
         "description": "Justera volymen för ljudåterkopplingsljud"
+      },
+      "systemAudioDevice": {
+        "title": "System Audio",
+        "description": "Select the device to capture system audio for transcription",
+        "placeholder": "Select system audio device...",
+        "loading": "Loading..."
       }
     },
     "advanced": {
@@ -383,6 +396,22 @@
         "remove": "Ta bort {{word}}",
         "duplicate": "\"{{word}}\" finns redan"
       },
+      "dictionary": {
+        "title": "Dictionary",
+        "description": "How to write ← how recognition hears it. One file feeds the Whisper hint, exact replacements for any language and LLM cleanup. Changes apply from the next dictation.",
+        "openDictionary": "Open dictionary",
+        "openCleanupPrompt": "Open cleanup prompt",
+        "openFolder": "Open folder",
+        "reset": "Reset to default",
+        "resetTitle": "Reset dictionary",
+        "resetConfirm": "Replace dictionary.txt with the default? The current file is saved as dictionary.txt.bak.",
+        "resetDone": "Dictionary reset; the previous file is saved as dictionary.txt.bak",
+        "status": "{{entries}} entries · {{conditional}} with a condition (LLM only) · {{inPrompt}} of {{terms}} terms in the Whisper hint",
+        "error": "Line {{line}}: {{message}}",
+        "previewPlaceholder": "Type a phrase to check replacements",
+        "preview": "Check",
+        "previewResult": "After replacements:"
+      },
       "whisperPrompt": {
         "title": "Whisper-transkriberingsprompt",
         "presetLabel": "1. Choose by spoken language",
@@ -414,6 +443,15 @@
       "fillerWordRemoval": {
         "title": "Ta bort utfyllnadsord",
         "description": "Tar bort vanliga tvekljud från transkriberingar. Stäng av för att behålla dem."
+      },
+      "chineseScript": {
+        "title": "Kinesisk skrift",
+        "description": "Skriver mandarin- och kantonesiska transkriptioner med förenklade eller traditionella tecken. Andra språk lämnas oförändrade.",
+        "options": {
+          "asTranscribed": "Som transkriberat",
+          "simplified": "Förenklad",
+          "traditional": "Traditionell"
+        }
       }
     },
     "postProcessing": {
@@ -476,6 +514,7 @@
       "loading": "Laddar historik...",
       "empty": "Inga transkriptioner ännu. Börja spela in för att bygga upp din historik!",
       "copyToClipboard": "Kopiera transkription till urklipp",
+      "copyError": "Det gick inte att kopiera transkriptionen till urklipp.",
       "save": "Spara transkription",
       "unsave": "Ta bort från sparade",
       "delete": "Ta bort post",
@@ -697,7 +736,9 @@
     "noInputDevice": "Ingen ljudenhet hittades. Anslut en mikrofon eller ett headset och försök igen.",
     "pasteFailedTitle": "Det gick inte att klistra in texten",
     "pasteFailed": "Texten kunde inte klistras in i det aktiva programmet.",
-    "transcriptionFailedTitle": "Transkriptionen misslyckades"
+    "transcriptionFailedTitle": "Transkriptionen misslyckades",
+    "postProcessFailedTitle": "Text cleanup failed",
+    "postProcessFailed": "The original transcription was pasted. Reason: {{error}}"
   },
   "appLanguage": {
     "title": "Applikationsspråk",
@@ -709,7 +750,8 @@
     "options": {
       "system": "System",
       "light": "Ljust",
-      "dark": "Mörkt"
+      "dark": "Mörkt",
+      "green": "Forest green"
     }
   },
   "overlay": {

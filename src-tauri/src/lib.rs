@@ -5,9 +5,11 @@ mod audio_feedback;
 pub mod audio_toolkit;
 mod autostart;
 mod catalog;
+mod chinese_script;
 pub mod cli;
 mod clipboard;
 mod commands;
+mod dictionary;
 mod helpers;
 mod input;
 mod llm_client;
@@ -24,6 +26,10 @@ mod transcription_coordinator;
 mod tray;
 mod tray_i18n;
 mod utils;
+mod watchdog;
+
+/// User-facing product name; keep in sync with tauri.conf.json's productName.
+pub const APP_NAME: &str = "Handy Listens";
 
 pub use cli::CliArgs;
 #[cfg(debug_assertions)]
@@ -695,6 +701,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_vad_enabled_setting,
             shortcut::change_vad_backend_setting,
             shortcut::change_filler_word_removal_enabled_setting,
+            shortcut::change_chinese_script_setting,
             shortcut::change_app_language_setting,
             shortcut::change_update_checks_setting,
             shortcut::change_show_whats_new_on_update_setting,
@@ -723,6 +730,10 @@ pub fn run(cli_args: CliArgs) {
             commands::open_recordings_folder,
             commands::open_log_dir,
             commands::open_app_data_dir,
+            commands::dictionary::get_dictionary_status,
+            commands::dictionary::open_dictionary_file,
+            commands::dictionary::reset_dictionary_file,
+            commands::dictionary::preview_dictionary,
             commands::check_apple_intelligence_available,
             commands::initialize_enigo,
             commands::initialize_shortcuts,
@@ -919,6 +930,7 @@ pub fn run(cli_args: CliArgs) {
                 app_handle.manage(model_manager);
                 app_handle.manage(transcription_manager);
                 managers::transcription::init_transcribe_backend();
+                managers::transcription::report_compute_devices();
                 managers::transcription::apply_accelerator_settings(&app_handle);
 
                 let handle = app_handle.clone();
@@ -1013,6 +1025,11 @@ pub fn run(cli_args: CliArgs) {
 
             initialize_core_logic(&app_handle);
 
+            // Monitor the hotkey pipeline threads for stalls (the
+            // intermittent "hotkey deafness" bug) and auto-recover the
+            // keyboard hook when its manager thread stops responding.
+            watchdog::start(app_handle.clone());
+
             // Secure Input monitor (macOS): detects stuck secure input that
             // silently blocks keyed shortcuts, warns the user, and activates
             // the Carbon fallback. See secure_input.rs and issue #1578.
@@ -1027,11 +1044,14 @@ pub fn run(cli_args: CliArgs) {
             );
 
             // Pre-warm GPU/accelerator enumeration on a background thread. The first
-            // get_available_accelerators call enumerates ORT execution providers and
-            // transcribe-cpp compute devices, which can take a moment; without this
+            // device listing opens the GPU, which on macOS loads ggml's Metal library
+            // and compiles it when the system shader cache does not have it yet, so it
+            // stays off the startup path. get_available_accelerators then enumerates
+            // ORT execution providers and transcribe-cpp compute devices; without this
             // the cost is paid synchronously when the user first opens Advanced
             // settings, freezing the UI. Result is cached in a OnceLock.
             std::thread::spawn(|| {
+                crate::managers::transcription::report_compute_devices();
                 let _ = crate::managers::transcription::get_available_accelerators();
             });
 

@@ -10,7 +10,19 @@ Handy Listens is a community-maintained fork of Handy for local speech transcrip
 
 Это не отдельная программа, написанная с нуля, а форк [Handy](https://github.com/cjpais/Handy), исходного приложения для локальной транскрипции. Оригинальный Handy создан и развивается автором под GitHub-именем [cjpais](https://github.com/cjpais). Ветка [vscg/Handy `feat/live-captions`](https://github.com/vscg/Handy/tree/feat/live-captions) добавляет к нему захват и расшифровку системного звука в реальном времени; её автор в репозитории указан как [vscg](https://github.com/vscg).
 
-Форк также включает настройки и обработки для Whisper, вдохновлённые разбором [Егора Соколова о распознавании в Klava](https://egorsokolov.ru/ai/klava-nevinovata/): пользовательский промпт/контекст распознавания, словарь пользовательских слов, ограничение предыдущего контекста, фильтрацию повторов и типичных галлюцинаций, а также восстановление границ слов для Breeze. Соколов — автор описанных рекомендаций, а не разработчик Handy или этого форка. Бенчмарки из его статьи относятся к его сценарию и не являются результатами тестирования данного форка.
+Форк также включает настройки и обработки для Whisper, вдохновлённые разбором [Егора Соколова о распознавании в Klava](https://egorsokolov.ru/ai/klava-nevinovata/): пользовательский промпт/контекст распознавания, ограничение предыдущего контекста, фильтрацию повторов и типичных галлюцинаций, а также восстановление границ слов для Breeze. Бенчмарки из его статьи относятся к его сценарию и не являются результатами тестирования данного форка.
+
+Из форка Соколова [klava-nevinovata](https://github.com/egsok/klava-nevinovata) (MIT) перенесены изменения для надёжной работы на Windows: watchdog горячих клавиш с восстановлением зависшего хука клавиатуры, различение тапа и удержания при медленном старте микрофона, атомарное сохранение настроек, вставка без зависаний и с сохранением всего содержимого буфера обмена, автозапуск из пути с пробелами.
+
+### Словарь и чистка речи
+
+Словарь хранится в файле `dictionary.txt` в папке данных приложения и открывается из настроек (Advanced → «Словарь»). Строка `как писать ← как слышит` работает на трёх шагах:
+
+- подсказывает Whisper правильное написание терминов (строка `> фраза` добавляет связный текст-подсказку);
+- исправляет распознанный текст на любом языке, включая кириллицу: `бэклог* ← беклог*` заменяет «в беклоге» на «в бэклоге», `*` сохраняет окончание;
+- передаётся в LLM-чистку. Строки с условием в скобках (`Cursor ← курсор (only when it is about the code editor)`) правилом не заменяются: контекст понимает только LLM.
+
+LLM-чистка необязательна и выключена, пока не задан API-ключ. Встроенный промпт «Чистка русской речи» берётся из `cleanup_prompt.txt` и основан на [Чистовике](https://github.com/Tataut/chistovik) (MIT). Он убирает слова-паразиты и оговорки, не меняя разговорный стиль. Если запрос к LLM не удался, вставляется исходный текст и появляется уведомление. Лицензии заимствованного кода — в [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 По сравнению с upstream Handy эта сборка подходит тем, кому нужно распознавать не только микрофон, но и звук компьютера (например, собеседника в Zoom), настраивать словарь и поведение Whisper. Это не означает, что она всегда точнее или быстрее: результат зависит от модели, устройства и записи. Форк сохраняет базовые возможности Handy и развивается отдельно; обновления upstream следует интегрировать и собирать осознанно, чтобы не затереть эти изменения.
 
@@ -420,6 +432,18 @@ Exec=env HANDY_NO_GTK_LAYER_SHELL=1 handy
 ```
 
 If a workaround helps you, please [open an issue](https://github.com/cjpais/Handy/issues) describing your distro, desktop environment, and session type — that information helps us narrow down the underlying bug.
+
+### Empty recording overlay on Hyprland / Omarchy
+
+If the recording overlay is empty or bordered, fully quit Handy and launch a
+[native installation](BUILD.md#linux-install-from-source) with Wayland enabled:
+
+```bash
+env -u HANDY_NO_GTK_LAYER_SHELL GDK_BACKEND=wayland handy
+```
+
+If this works, apply `GDK_BACKEND=wayland` only to Handy's launcher. This
+workaround does not work with the 0.9.6 AppImage, which forces X11.
 
 ### Vulkan Overlays and Capture Tools on Windows (`HANDY_KEEP_VULKAN_IMPLICIT_LAYERS`)
 

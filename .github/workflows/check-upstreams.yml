@@ -73,6 +73,8 @@ jobs:
                   upstream.notes,
                   "",
                   "After reviewing and integrating changes, update this source's entry in `.github/upstream-baselines.json`.",
+                  "",
+                  "Procedure, build notes and the list of fork features to preserve: `FORK_UPDATING.md`.",
                 ].join("\n"),
                 labels: ["upstream-review"],
               });

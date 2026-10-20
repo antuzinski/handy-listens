@@ -2,6 +2,16 @@
 
 This file provides guidance to AI coding assistants working with code in this repository.
 
+## Handy Listens fork rules (read first)
+
+This repository is the **Handy Listens** fork (`antuzinski/handy-listens`), not upstream Handy. These rules override the upstream sections below.
+
+- **Publish only to `antuzinski/handy-listens`** (remote `fork`). In the working copy `origin` points to `vscg/Handy`, which is someone else's repository: never push there. Upstream Handy PR/issue templates and the feature freeze below apply to contributions to `cjpais/Handy`, not to this fork.
+- **Updating from Handy or klava-nevinovata:** follow [FORK_UPDATING.md](FORK_UPDATING.md). It lists the fork features that must survive a merge, what was already taken from Klava and the verification checklist. Record the new bases in `.github/upstream-baselines.json`.
+- **Building on the maintainer's Windows machine:** set `CARGO_TARGET_DIR=src-tauri\target\integrate`. The user's everyday Handy runs from `src-tauri\target\release`; building there overwrites the running app. `cmake` comes from `C:\BuildTools\...\CMake`, Vulkan SDK from `C:\VulkanSDK`. The `python` on PATH is a Microsoft Store stub; use node or bun for scripts.
+- **User data** lives in `%APPDATA%\com.pais.handy` (settings, history, recordings, models, `dictionary.txt`, `cleanup_prompt.txt`). Back it up with the app closed before testing a new build.
+- Project state and history: `PROJECT_OVERVIEW.md`; plans: `docs/`.
+
 ## Development Commands
 
 **Prerequisites:**

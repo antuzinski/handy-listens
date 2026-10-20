@@ -179,6 +179,10 @@
           "transcribe_with_post_process": {
             "name": "Genvej til efterbehandling",
             "description": "Valgfrit: En dedikeret genvej, der altid anvender AI-efterbehandling på din transskription."
+          },
+          "caption": {
+            "name": "Caption Shortcut",
+            "description": "The keyboard shortcut to capture and transcribe your voice and system audio."
           }
         },
         "errors": {
@@ -207,6 +211,9 @@
           "push_to_talk": "Optager, mens du holder genvejen nede",
           "toggle": "Tryk på genvejen for at starte optagelsen, tryk igen for at stoppe"
         }
+      },
+      "liveCaptions": {
+        "title": "Live Captions"
       }
     },
     "models": {
@@ -256,6 +263,12 @@
       "volume": {
         "title": "Lydstyrke",
         "description": "Juster lydstyrken for lydfeedback"
+      },
+      "systemAudioDevice": {
+        "title": "System Audio",
+        "description": "Select the device to capture system audio for transcription",
+        "placeholder": "Select system audio device...",
+        "loading": "Loading..."
       }
     },
     "advanced": {
@@ -383,6 +396,22 @@
         "remove": "Fjern {{word}}",
         "duplicate": "\"{{word}}\" findes allerede"
       },
+      "dictionary": {
+        "title": "Dictionary",
+        "description": "How to write ← how recognition hears it. One file feeds the Whisper hint, exact replacements for any language and LLM cleanup. Changes apply from the next dictation.",
+        "openDictionary": "Open dictionary",
+        "openCleanupPrompt": "Open cleanup prompt",
+        "openFolder": "Open folder",
+        "reset": "Reset to default",
+        "resetTitle": "Reset dictionary",
+        "resetConfirm": "Replace dictionary.txt with the default? The current file is saved as dictionary.txt.bak.",
+        "resetDone": "Dictionary reset; the previous file is saved as dictionary.txt.bak",
+        "status": "{{entries}} entries · {{conditional}} with a condition (LLM only) · {{inPrompt}} of {{terms}} terms in the Whisper hint",
+        "error": "Line {{line}}: {{message}}",
+        "previewPlaceholder": "Type a phrase to check replacements",
+        "preview": "Check",
+        "previewResult": "After replacements:"
+      },
       "whisperPrompt": {
         "title": "Whisper-transskriptionsprompt",
         "presetLabel": "1. Choose by spoken language",
@@ -414,6 +443,15 @@
       "fillerWordRemoval": {
         "title": "Fjern fyldord",
         "description": "Fjerner almindelige tøveord fra transskriptioner. Slå fra for at beholde dem."
+      },
+      "chineseScript": {
+        "title": "Kinesisk skrift",
+        "description": "Skriver mandarin- og kantonesisk-transskriptioner med forenklede eller traditionelle tegn. Andre sprog ændres ikke.",
+        "options": {
+          "asTranscribed": "Som transskriberet",
+          "simplified": "Forenklet",
+          "traditional": "Traditionel"
+        }
       }
     },
     "postProcessing": {
@@ -476,6 +514,7 @@
       "loading": "Indlæser historik...",
       "empty": "Ingen transskriptioner endnu. Start optagelse for at opbygge din historik!",
       "copyToClipboard": "Kopiér transskription til udklipsholder",
+      "copyError": "Kunne ikke kopiere transskriptionen til udklipsholderen.",
       "save": "Gem transskription",
       "unsave": "Fjern fra gemte",
       "delete": "Slet post",
@@ -700,7 +739,9 @@
     "modelLoadFailedUnknown": "ukendt model",
     "pasteFailedTitle": "Kunne ikke indsætte tekst",
     "pasteFailed": "Teksten kunne ikke indsættes i det aktive program.",
-    "transcriptionFailedTitle": "Transskription mislykkedes"
+    "transcriptionFailedTitle": "Transskription mislykkedes",
+    "postProcessFailedTitle": "Text cleanup failed",
+    "postProcessFailed": "The original transcription was pasted. Reason: {{error}}"
   },
   "appLanguage": {
     "title": "Applikationssprog",
@@ -712,7 +753,8 @@
     "options": {
       "system": "System",
       "light": "Lys",
-      "dark": "Mørk"
+      "dark": "Mørk",
+      "green": "Forest green"
     }
   },
   "overlay": {

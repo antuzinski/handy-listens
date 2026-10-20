@@ -396,6 +396,22 @@
         "remove": "Remove {{word}}",
         "duplicate": "\"{{word}}\" already exists"
       },
+      "dictionary": {
+        "title": "Dictionary",
+        "description": "How to write ← how recognition hears it. One file feeds the Whisper hint, exact replacements for any language and LLM cleanup. Changes apply from the next dictation.",
+        "openDictionary": "Open dictionary",
+        "openCleanupPrompt": "Open cleanup prompt",
+        "openFolder": "Open folder",
+        "reset": "Reset to default",
+        "resetTitle": "Reset dictionary",
+        "resetConfirm": "Replace dictionary.txt with the default? The current file is saved as dictionary.txt.bak.",
+        "resetDone": "Dictionary reset; the previous file is saved as dictionary.txt.bak",
+        "status": "{{entries}} entries · {{conditional}} with a condition (LLM only) · {{inPrompt}} of {{terms}} terms in the Whisper hint",
+        "error": "Line {{line}}: {{message}}",
+        "previewPlaceholder": "Type a phrase to check replacements",
+        "preview": "Check",
+        "previewResult": "After replacements:"
+      },
       "whisperPrompt": {
         "title": "Whisper transcription prompt",
         "description": "Used only by Whisper-family models (including Turbo and Breeze), for dictation and live captions. Pick a preset that matches the spoken language; English-only audio should use English, not a Russian prompt. Other models such as Nemotron ignore this field.",
@@ -427,6 +443,15 @@
       "fillerWordRemoval": {
         "title": "Remove Filler Words",
         "description": "Removes common hesitation words from transcriptions. Turn off to keep them."
+      },
+      "chineseScript": {
+        "title": "Chinese Script",
+        "description": "Writes Mandarin and Cantonese transcriptions in Simplified or Traditional characters. Other languages are left unchanged.",
+        "options": {
+          "asTranscribed": "As Transcribed",
+          "simplified": "Simplified",
+          "traditional": "Traditional"
+        }
       }
     },
     "postProcessing": {
@@ -489,6 +514,7 @@
       "loading": "Loading history...",
       "empty": "No transcriptions yet. Start recording to build your history!",
       "copyToClipboard": "Copy transcription to clipboard",
+      "copyError": "Failed to copy transcription to clipboard.",
       "save": "Save transcription",
       "unsave": "Remove from saved",
       "delete": "Delete entry",
@@ -713,7 +739,9 @@
     "modelLoadFailedUnknown": "unknown model",
     "pasteFailedTitle": "Failed to Paste Text",
     "pasteFailed": "Text could not be pasted into the active application.",
-    "transcriptionFailedTitle": "Transcription Failed"
+    "transcriptionFailedTitle": "Transcription Failed",
+    "postProcessFailedTitle": "Text cleanup failed",
+    "postProcessFailed": "The original transcription was pasted. Reason: {{error}}"
   },
   "appLanguage": {
     "title": "Application Language",

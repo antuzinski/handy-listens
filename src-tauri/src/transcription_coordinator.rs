@@ -169,8 +169,17 @@ enum Effect {
 
 /// Commands processed sequentially by the coordinator thread.
 enum Command {
-    Input(InputEvent),
-    Cancel { recording_was_active: bool },
+    /// Resolve settings only after this command reaches the coordinator thread.
+    KeyboardInput {
+        binding_id: String,
+        hotkey_string: String,
+        is_pressed: bool,
+        occurred_at: Instant,
+    },
+    Input(InputEvent, Instant),
+    Cancel {
+        recording_was_active: bool,
+    },
     ProcessingFinished,
 }
 
@@ -247,7 +256,37 @@ impl CoordinatorState {
             || self.pending_press.as_ref().is_some_and(|p| p.locked)
     }
 
+    #[cfg(test)]
     fn on_input(&mut self, input: InputEvent, now: Instant) -> Option<Effect> {
+        self.on_timed_input(input, now, now)
+    }
+
+    /// Drain physical releases before a later, distinct key edge, even when
+    /// microphone startup made the coordinator receive both edges together.
+    fn on_queued_input(
+        &mut self,
+        input: InputEvent,
+        occurred_at: Instant,
+        received_at: Instant,
+    ) -> [Option<Effect>; 2] {
+        let expired = self.pending_release.as_ref().is_some_and(|release| {
+            occurred_at.saturating_duration_since(release.released_at) >= RELEASE_GRACE
+        });
+        let release_effect = if expired {
+            self.on_grace_expired()
+        } else {
+            None
+        };
+        let input_effect = self.on_timed_input(input, occurred_at, received_at);
+        [release_effect, input_effect]
+    }
+
+    fn on_timed_input(
+        &mut self,
+        input: InputEvent,
+        occurred_at: Instant,
+        now: Instant,
+    ) -> Option<Effect> {
         let pending_release_binding = self
             .pending_release
             .as_ref()
@@ -276,7 +315,7 @@ impl CoordinatorState {
                     binding_id: input.binding_id,
                     hotkey_string: input.hotkey_string,
                     deadline: now + RELEASE_GRACE,
-                    released_at: now,
+                    released_at: occurred_at,
                 });
                 return None;
             }
@@ -290,12 +329,12 @@ impl CoordinatorState {
         if input.is_pressed && !input.external {
             if self
                 .last_press
-                .is_some_and(|t| now.duration_since(t) < DEBOUNCE)
+                .is_some_and(|t| occurred_at.saturating_duration_since(t) < DEBOUNCE)
             {
                 debug!("Debounced press for '{}'", input.binding_id);
                 return None;
             }
-            self.last_press = Some(now);
+            self.last_press = Some(occurred_at);
         }
 
         // A busy pipeline can't accept lifecycle changes now: classify the
@@ -327,7 +366,7 @@ impl CoordinatorState {
                         locked: input.mode == ShortcutActivation::Toggle,
                         binding_id: input.binding_id,
                         hotkey_string: input.hotkey_string,
-                        pressed_at: now,
+                        pressed_at: occurred_at,
                     });
                 }
                 BusyAction::Forget => {
@@ -349,7 +388,7 @@ impl CoordinatorState {
                     return Some(self.begin_recording(
                         input.binding_id,
                         input.hotkey_string,
-                        now,
+                        occurred_at,
                         locked,
                     ));
                 }
@@ -376,7 +415,12 @@ impl CoordinatorState {
             // A release that was not deferred (one is already pending for this
             // binding): resolve it immediately rather than dropping it.
             let threshold = input.effective_hold_threshold();
-            return self.finish_hold(input.binding_id, input.hotkey_string, now, threshold);
+            return self.finish_hold(
+                input.binding_id,
+                input.hotkey_string,
+                occurred_at,
+                threshold,
+            );
         }
         None
     }
@@ -545,41 +589,88 @@ impl TranscriptionCoordinator {
         thread::spawn(move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let mut state = CoordinatorState::new();
+                let mut processing_started: Option<Instant> = None;
+                publish_stage(&state.stage);
 
                 loop {
+                    crate::watchdog::beat_coordinator();
                     let cmd = if let Some(deadline) = state.grace_deadline() {
                         match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
                             Ok(cmd) => cmd,
                             Err(mpsc::RecvTimeoutError::Timeout) => {
                                 if let Some(effect) = state.on_grace_expired() {
-                                    run_effect(&app, &mut state, effect);
+                                    run_effect(&app, &mut state, &mut processing_started, effect);
                                 }
                                 continue;
                             }
                             Err(mpsc::RecvTimeoutError::Disconnected) => break,
                         }
                     } else {
-                        match rx.recv() {
+                        // Keep the heartbeat alive while idle as well as while active.
+                        match rx.recv_timeout(Duration::from_secs(1)) {
                             Ok(cmd) => cmd,
-                            Err(_) => break,
+                            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                            Err(mpsc::RecvTimeoutError::Disconnected) => break,
                         }
                     };
 
+                    let cmd = match cmd {
+                        Command::KeyboardInput {
+                            binding_id,
+                            hotkey_string,
+                            is_pressed,
+                            occurred_at,
+                        } => {
+                            let settings = crate::settings::get_settings(&app);
+                            Command::Input(
+                                InputEvent {
+                                    binding_id,
+                                    hotkey_string,
+                                    is_pressed,
+                                    mode: settings.shortcut_activation,
+                                    hold_threshold: Duration::from_millis(
+                                        settings.hold_threshold_ms,
+                                    ),
+                                    external: false,
+                                },
+                                occurred_at,
+                            )
+                        }
+                        other => other,
+                    };
                     match cmd {
-                        Command::Input(input) => {
-                            if let Some(effect) = state.on_input(input, Instant::now()) {
-                                run_effect(&app, &mut state, effect);
+                        Command::KeyboardInput { .. } => {
+                            unreachable!("keyboard input resolved above")
+                        }
+                        Command::Input(input, occurred_at) => {
+                            debug!("coordinator: input(binding={}, pressed={}, mode={:?}) | stage={:?}",
+                                input.binding_id, input.is_pressed, input.mode, state.stage);
+                            for effect in state
+                                .on_queued_input(input, occurred_at, Instant::now())
+                                .into_iter()
+                                .flatten()
+                            {
+                                run_effect(&app, &mut state, &mut processing_started, effect);
                             }
                         }
                         Command::Cancel {
                             recording_was_active,
                         } => state.on_cancel(recording_was_active),
                         Command::ProcessingFinished => {
+                            let elapsed_ms = processing_started
+                                .take()
+                                .map(|t| t.elapsed().as_millis())
+                                .unwrap_or(0);
+                            debug!(
+                                "coordinator: processing finished (Processing took {}ms)",
+                                elapsed_ms
+                            );
                             if let Some(effect) = state.on_processing_finished() {
-                                run_effect(&app, &mut state, effect);
+                                run_effect(&app, &mut state, &mut processing_started, effect);
                             }
                         }
                     }
+                    publish_stage(&state.stage);
                 }
                 debug!("Transcription coordinator exited");
             }));
@@ -591,24 +682,20 @@ impl TranscriptionCoordinator {
         Self { tx }
     }
 
-    /// Send a keyboard input event for a transcribe binding. `hold_threshold`
-    /// only matters for [`ShortcutActivation::HoldOrToggle`].
-    pub fn send_input(
-        &self,
-        binding_id: &str,
-        hotkey_string: &str,
-        is_pressed: bool,
-        mode: ShortcutActivation,
-        hold_threshold: Duration,
-    ) {
-        self.send(
-            binding_id,
-            hotkey_string,
-            is_pressed,
-            mode,
-            hold_threshold,
-            false,
-        );
+    /// Queue keyboard input without reading settings on the OS hook thread.
+    pub fn send_input(&self, binding_id: &str, hotkey_string: &str, is_pressed: bool) {
+        if self
+            .tx
+            .send(Command::KeyboardInput {
+                binding_id: binding_id.to_string(),
+                hotkey_string: hotkey_string.to_string(),
+                is_pressed,
+                occurred_at: Instant::now(),
+            })
+            .is_err()
+        {
+            warn!("Transcription coordinator channel closed");
+        }
     }
 
     /// Send an external trigger (SIGUSR2, CLI flag). Always a toggle press,
@@ -635,14 +722,17 @@ impl TranscriptionCoordinator {
     ) {
         if self
             .tx
-            .send(Command::Input(InputEvent {
-                binding_id: binding_id.to_string(),
-                hotkey_string: hotkey_string.to_string(),
-                is_pressed,
-                mode,
-                hold_threshold,
-                external,
-            }))
+            .send(Command::Input(
+                InputEvent {
+                    binding_id: binding_id.to_string(),
+                    hotkey_string: hotkey_string.to_string(),
+                    is_pressed,
+                    mode,
+                    hold_threshold,
+                    external,
+                },
+                Instant::now(),
+            ))
             .is_err()
         {
             warn!("Transcription coordinator channel closed");
@@ -668,7 +758,22 @@ impl TranscriptionCoordinator {
     }
 }
 
-fn run_effect(app: &AppHandle, state: &mut CoordinatorState, effect: Effect) {
+fn publish_stage(stage: &Stage) {
+    crate::watchdog::set_coordinator_stage(match stage {
+        Stage::Idle => 0,
+        Stage::Recording(_) => 1,
+        Stage::Processing => 2,
+    });
+}
+
+const ACTION_STALL: Duration = Duration::from_millis(1000);
+
+fn run_effect(
+    app: &AppHandle,
+    state: &mut CoordinatorState,
+    processing_started: &mut Option<Instant>,
+    effect: Effect,
+) {
     match effect {
         Effect::Start {
             binding_id,
@@ -680,8 +785,13 @@ fn run_effect(app: &AppHandle, state: &mut CoordinatorState, effect: Effect) {
         Effect::Stop {
             binding_id,
             hotkey_string,
-        } => stop(app, &binding_id, &hotkey_string),
+        } => {
+            stop(app, &binding_id, &hotkey_string);
+            *processing_started = Some(Instant::now());
+        }
     }
+    debug!("coordinator: stage {:?}", state.stage);
+    publish_stage(&state.stage);
 }
 
 /// Execute a start effect; returns whether recording actually began, so the
@@ -691,7 +801,11 @@ fn start(app: &AppHandle, binding_id: &str, hotkey_string: &str) -> bool {
         warn!("No action in ACTION_MAP for '{binding_id}'");
         return false;
     };
+    let started = Instant::now();
     action.start(app, binding_id, hotkey_string);
+    if started.elapsed() > ACTION_STALL {
+        warn!("coordinator: action.start blocked for {:?} — main-thread (tray/overlay) or audio-device stall; hotkey presses queued during this time", started.elapsed());
+    }
     let recording = app
         .try_state::<Arc<AudioRecordingManager>>()
         .is_some_and(|a| a.is_recording());
@@ -706,12 +820,48 @@ fn stop(app: &AppHandle, binding_id: &str, hotkey_string: &str) {
         warn!("No action in ACTION_MAP for '{binding_id}'");
         return;
     };
+    let started = Instant::now();
     action.stop(app, binding_id, hotkey_string);
+    if started.elapsed() > ACTION_STALL {
+        warn!("coordinator: action.stop blocked for {:?} — main-thread (tray/overlay) or audio-device stall; hotkey presses queued during this time", started.elapsed());
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn keyboard_events_queue_without_accessing_app_settings() {
+        let (tx, rx) = mpsc::channel();
+        let coordinator = TranscriptionCoordinator { tx };
+        let before_send = Instant::now();
+        coordinator.send_input("transcribe", "ctrl+space", true);
+        let after_send = Instant::now();
+        assert!(matches!(rx.try_recv().unwrap(), Command::KeyboardInput {
+            binding_id, hotkey_string, is_pressed: true, occurred_at
+        } if binding_id == "transcribe" && hotkey_string == "ctrl+space"
+            && (before_send..=after_send).contains(&occurred_at)));
+    }
+
+    #[test]
+    fn external_events_bypass_keyboard_settings_and_debounce() {
+        let (tx, rx) = mpsc::channel();
+        let coordinator = TranscriptionCoordinator { tx };
+        coordinator.send_external_input("transcribe", "cli");
+        assert!(matches!(
+            rx.try_recv().unwrap(),
+            Command::Input(
+                InputEvent {
+                    mode: ShortcutActivation::Toggle,
+                    external: true,
+                    is_pressed: true,
+                    ..
+                },
+                _
+            )
+        ));
+    }
 
     #[test]
     fn push_to_talk_release_while_recording_defers_release() {
@@ -1226,6 +1376,93 @@ mod tests {
 
     fn ms(n: u64) -> Duration {
         Duration::from_millis(n)
+    }
+
+    #[test]
+    fn cold_microphone_start_does_not_turn_a_short_tap_into_a_hold() {
+        let mode = ShortcutActivation::HoldOrToggle;
+        let t0 = Instant::now();
+        let mut state = CoordinatorState::new();
+        assert!(matches!(
+            state.on_timed_input(input(mode, true), t0, t0),
+            Some(Effect::Start { .. })
+        ));
+
+        // The user releases after 100ms, but synchronous microphone startup
+        // keeps the coordinator busy for 400ms. Classify the physical tap,
+        // while still granting a full repeat-reconciliation window on receipt.
+        assert!(state
+            .on_timed_input(input(mode, false), t0 + ms(100), t0 + ms(400))
+            .is_none());
+        assert_eq!(state.grace_deadline(), Some(t0 + ms(400) + RELEASE_GRACE));
+        assert!(state.on_grace_expired().is_none());
+        assert_eq!(state.stage, Stage::Recording(BINDING.to_string()));
+        assert!(state.is_locked(), "a short tap must keep recording");
+    }
+
+    #[test]
+    fn queued_separate_taps_start_then_stop_despite_cold_microphone_start() {
+        let mode = ShortcutActivation::HoldOrToggle;
+        let t0 = Instant::now();
+        let mut state = CoordinatorState::new();
+        let mut effects = Vec::new();
+        for (pressed, physical_ms, received_ms) in [
+            (true, 0, 0),
+            (false, 50, 400),
+            (true, 150, 400),
+            (false, 200, 400),
+        ] {
+            effects.extend(
+                state
+                    .on_queued_input(
+                        input(mode, pressed),
+                        t0 + ms(physical_ms),
+                        t0 + ms(received_ms),
+                    )
+                    .into_iter()
+                    .flatten(),
+            );
+        }
+        assert!(matches!(
+            effects.as_slice(),
+            [Effect::Start { .. }, Effect::Stop { .. }]
+        ));
+        assert_eq!(state.stage, Stage::Processing);
+        assert!(
+            state.pending_press.is_none(),
+            "two taps must not queue a third recording"
+        );
+    }
+
+    #[test]
+    fn queued_x11_repeat_pair_still_preserves_a_real_hold() {
+        let mode = ShortcutActivation::HoldOrToggle;
+        let t0 = Instant::now();
+        let mut state = CoordinatorState::new();
+        let mut effects = Vec::new();
+        for (pressed, physical_ms, received_ms) in [
+            (true, 0, 0),
+            (false, 100, 400),
+            (true, 105, 400),
+            (false, 800, 800),
+        ] {
+            effects.extend(
+                state
+                    .on_queued_input(
+                        input(mode, pressed),
+                        t0 + ms(physical_ms),
+                        t0 + ms(received_ms),
+                    )
+                    .into_iter()
+                    .flatten(),
+            );
+        }
+        effects.extend(state.on_grace_expired());
+        assert!(matches!(
+            effects.as_slice(),
+            [Effect::Start { .. }, Effect::Stop { .. }]
+        ));
+        assert_eq!(state.stage, Stage::Processing);
     }
 
     /// Hold-or-toggle: a key held past the threshold is push-to-talk — the

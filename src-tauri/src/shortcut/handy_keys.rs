@@ -28,11 +28,11 @@
 //! via Tauri's event system.
 
 use handy_keys::{Hotkey, HotkeyId, HotkeyManager, HotkeyState, KeyboardListener};
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use serde::Serialize;
 use specta::Type;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -41,6 +41,13 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::settings::{self, get_settings, ShortcutBinding};
 
 use super::handler::handle_shortcut_event;
+
+/// Generation counter for manager threads. `reinstall_hook` bumps this and
+/// abandons the old thread WITHOUT joining it (a stuck thread would hang the
+/// caller forever). The old thread compares its generation before dispatching
+/// any event, so events it drained before stalling can never replay actions
+/// after a reinstall.
+static MANAGER_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// Commands that can be sent to the hotkey manager thread
 enum ManagerCommand {
@@ -54,6 +61,29 @@ enum ManagerCommand {
         response: Sender<Result<(), String>>,
     },
     Shutdown,
+}
+
+/// A cancel reconciliation owns a shared lock while waiting for this reply.
+/// Recovery abandons the old worker, which may keep its response sender alive
+/// forever. Poll only to notice an actual sender replacement; elapsed time by
+/// itself must never fail a command that could still register a hotkey later.
+fn wait_for_cancel_response(
+    response: Receiver<Result<(), String>>,
+    sent_generation: u64,
+    current_generation: &AtomicU64,
+) -> Result<(), String> {
+    loop {
+        if current_generation.load(Ordering::SeqCst) != sent_generation {
+            return Err("Cancel shortcut command superseded by hook recovery".into());
+        }
+        match response.recv_timeout(std::time::Duration::from_millis(25)) {
+            Ok(result) => return result,
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err("Failed to receive cancel shortcut response".into());
+            }
+        }
+    }
 }
 
 /// State for the handy-keys shortcut manager
@@ -91,9 +121,10 @@ impl HandyKeysState {
         let (cmd_tx, cmd_rx) = mpsc::channel::<ManagerCommand>();
 
         // Start the manager thread
+        let generation = MANAGER_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
         let app_clone = app.clone();
         let thread_handle = thread::spawn(move || {
-            Self::manager_thread(cmd_rx, app_clone);
+            Self::manager_thread(cmd_rx, app_clone, generation);
         });
 
         Ok(Self {
@@ -107,26 +138,71 @@ impl HandyKeysState {
     }
 
     /// The main manager thread - owns the HotkeyManager and processes commands
-    fn manager_thread(cmd_rx: Receiver<ManagerCommand>, app: AppHandle) {
-        info!("handy-keys manager thread started");
+    fn manager_thread(cmd_rx: Receiver<ManagerCommand>, app: AppHandle, generation: u64) {
+        info!("handy-keys manager thread started (generation {generation})");
 
-        // Create the HotkeyManager in this thread
+        // Time HotkeyManager creation — this is when the OS-level
+        // WH_KEYBOARD_LL hook actually gets installed on Windows. Before this
+        // returns, hotkey events from the OS are lost. See debug plan: hotkey
+        // "не срабатывает сразу после рестарта" diagnosis.
+        let hotkey_init_start = std::time::Instant::now();
         let manager = match HotkeyManager::new_with_blocking() {
-            Ok(m) => m,
+            Ok(m) => {
+                info!(
+                    "handy-keys: HotkeyManager (WH_KEYBOARD_LL hook) ready in {}ms",
+                    hotkey_init_start.elapsed().as_millis()
+                );
+                m
+            }
             Err(e) => {
                 error!("Failed to create HotkeyManager: {}", e);
                 return;
             }
         };
 
+        // One-shot flag: log the very first hook event with timing relative
+        // to manager init, to detect the gap between "hook ready" and "events
+        // actually flowing". Subsequent events use the per-event debug log.
+        let mut first_event_logged = false;
+
         // Maps binding IDs to HotkeyIds and hotkey strings
         let mut binding_to_hotkey: HashMap<String, HotkeyId> = HashMap::new();
         let mut hotkey_to_binding: HashMap<HotkeyId, (String, String)> = HashMap::new(); // (binding_id, hotkey_string)
 
         loop {
+            crate::watchdog::beat_manager();
+
+            // A reinstall happened while we were (presumably) stuck — a fresh
+            // manager thread owns the pipeline now. Exit without dispatching
+            // anything else so queued stale events can't replay actions.
+            if MANAGER_GENERATION.load(Ordering::SeqCst) != generation {
+                warn!(
+                    "handy-keys manager thread (generation {generation}) superseded; \
+                     exiting and discarding queued events"
+                );
+                break;
+            }
+
             // Check for hotkey events (non-blocking)
             while let Some(event) = manager.try_recv() {
+                if MANAGER_GENERATION.load(Ordering::SeqCst) != generation {
+                    warn!(
+                        "handy-keys: dropping stale event for generation {generation} \
+                         (superseded by reinstall)"
+                    );
+                    break;
+                }
                 if let Some((binding_id, hotkey_string)) = hotkey_to_binding.get(&event.id) {
+                    if !first_event_logged {
+                        info!(
+                            "handy-keys: first hook event received {}ms after init start \
+                             (binding={}, hotkey={})",
+                            hotkey_init_start.elapsed().as_millis(),
+                            binding_id,
+                            hotkey_string
+                        );
+                        first_event_logged = true;
+                    }
                     debug!(
                         "handy-keys event: binding={}, hotkey={}, state={:?}",
                         binding_id, hotkey_string, event.state
@@ -229,31 +305,99 @@ impl HandyKeysState {
     /// Register a shortcut binding
     pub fn register(&self, binding: &ShortcutBinding) -> Result<(), String> {
         let (tx, rx) = mpsc::channel();
-        self.command_sender
+        let sender = self
+            .command_sender
             .lock()
-            .map_err(|_| "Failed to lock command_sender")?
+            .map_err(|_| "Failed to lock command_sender")?;
+        // Sender and generation must describe the same worker. Recovery updates
+        // both under this lock, after it has installed the replacement sender.
+        let generation = super::HANDY_KEYS_GENERATION.load(Ordering::SeqCst);
+        sender
             .send(ManagerCommand::Register {
                 binding_id: binding.id.clone(),
                 hotkey_string: binding.current_binding.clone(),
                 response: tx,
             })
             .map_err(|_| "Failed to send register command")?;
+        drop(sender);
+
+        if binding.id == "cancel" {
+            return wait_for_cancel_response(rx, generation, &super::HANDY_KEYS_GENERATION);
+        }
 
         rx.recv()
             .map_err(|_| "Failed to receive register response")?
     }
 
+    /// Tear down the current manager thread (and its OS hook) and spawn a new
+    /// one. This is the recovery path when the WH_KEYBOARD_LL hook gets killed
+    /// by Windows (e.g. callback timeout exceeded LowLevelHooksTimeout) and
+    /// no longer fires events. After this returns, all bindings need to be
+    /// re-registered via `register()` since the new manager thread starts
+    /// with empty maps.
+    pub fn reinstall_hook(&self, app: AppHandle) -> Result<(), String> {
+        info!("HandyKeysState: reinstalling hook (abandoning old manager thread)");
+
+        // Bump the generation FIRST: from this moment the old thread refuses
+        // to dispatch events, even ones already drained into its local queue.
+        let generation = MANAGER_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+
+        // Ask the old thread to shut down, but do NOT join it — if it's stuck
+        // (the very situation this recovery exists for), a join would hang
+        // the caller forever. A healthy thread exits via Shutdown; a stuck
+        // one exits via the generation check whenever it unstalls, dropping
+        // its HotkeyManager (and OS hook) at that point.
+        if let Ok(sender) = self.command_sender.lock() {
+            let _ = sender.send(ManagerCommand::Shutdown);
+        }
+        if let Ok(mut handle_guard) = self.thread_handle.lock() {
+            let _ = handle_guard.take(); // drop the JoinHandle, detaching the thread
+        }
+
+        // Spawn fresh manager thread (this re-installs the OS hook via
+        // `HotkeyManager::new_with_blocking()` on the new thread). The newest
+        // WH_KEYBOARD_LL hook runs first in the chain, so it wins blocking
+        // decisions even while the old hook is still installed.
+        let (new_tx, new_rx) = mpsc::channel::<ManagerCommand>();
+        let app_clone = app.clone();
+        let new_handle = thread::spawn(move || {
+            Self::manager_thread(new_rx, app_clone, generation);
+        });
+
+        // Replace command_sender + thread_handle in place
+        if let Ok(mut sender_guard) = self.command_sender.lock() {
+            *sender_guard = new_tx;
+            // Publish only when requests can actually reach the new worker.
+            // MANAGER_GENERATION is bumped earlier to suppress stale events.
+            super::handy_keys_recreated(&app);
+        }
+        if let Ok(mut handle_guard) = self.thread_handle.lock() {
+            *handle_guard = Some(new_handle);
+        }
+
+        info!("HandyKeysState: hook reinstalled (new manager thread, generation {generation})");
+        Ok(())
+    }
+
     /// Unregister a shortcut binding
     pub fn unregister(&self, binding: &ShortcutBinding) -> Result<(), String> {
         let (tx, rx) = mpsc::channel();
-        self.command_sender
+        let sender = self
+            .command_sender
             .lock()
-            .map_err(|_| "Failed to lock command_sender")?
+            .map_err(|_| "Failed to lock command_sender")?;
+        let generation = super::HANDY_KEYS_GENERATION.load(Ordering::SeqCst);
+        sender
             .send(ManagerCommand::Unregister {
                 binding_id: binding.id.clone(),
                 response: tx,
             })
             .map_err(|_| "Failed to send unregister command")?;
+        drop(sender);
+
+        if binding.id == "cancel" {
+            return wait_for_cancel_response(rx, generation, &super::HANDY_KEYS_GENERATION);
+        }
 
         rx.recv()
             .map_err(|_| "Failed to receive unregister response")?
@@ -421,6 +565,48 @@ pub fn validate_shortcut(raw: &str) -> Result<(), String> {
         .map_err(|e| format!("Invalid shortcut for HandyKeys: {}", e))
 }
 
+/// Force-reinitialize handy-keys shortcuts: tears down the worker thread,
+/// reinstalls the OS hook, then re-registers all configured bindings.
+/// Used by the "Re-register Hotkeys" tray recovery action when the hook
+/// has gotten into a stuck state.
+pub fn force_reinit(app: &AppHandle) -> Result<(), String> {
+    let Some(state) = app.try_state::<HandyKeysState>() else {
+        // No existing state — fall back to fresh init
+        return init_shortcuts(app);
+    };
+
+    state.reinstall_hook(app.clone())?;
+
+    // Re-register all bindings on the freshly-spawned manager thread
+    let default_bindings = settings::get_default_settings().bindings;
+    let user_settings = settings::load_or_create_app_settings(app);
+
+    for (id, default_binding) in default_bindings {
+        if id == "cancel" {
+            continue;
+        }
+        if id == "transcribe_with_post_process" && !user_settings.post_process_enabled {
+            continue;
+        }
+
+        let binding = user_settings
+            .bindings
+            .get(&id)
+            .cloned()
+            .unwrap_or(default_binding);
+
+        if let Err(e) = state.register(&binding) {
+            error!(
+                "Failed to re-register handy-keys shortcut {} after reinit: {}",
+                id, e
+            );
+        }
+    }
+
+    info!("handy-keys shortcuts re-initialized");
+    Ok(())
+}
+
 /// Initialize handy-keys shortcuts
 pub fn init_shortcuts(app: &AppHandle) -> Result<(), String> {
     let state = HandyKeysState::new(app.clone())?;
@@ -455,51 +641,6 @@ pub fn init_shortcuts(app: &AppHandle) -> Result<(), String> {
     app.manage(state);
     info!("handy-keys shortcuts initialized");
     Ok(())
-}
-
-/// Register the cancel shortcut (called when recording starts)
-pub fn register_cancel_shortcut(app: &AppHandle) {
-    // Disabled on Linux due to instability
-    #[cfg(target_os = "linux")]
-    {
-        let _ = app;
-        return;
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    {
-        let app_clone = app.clone();
-        tauri::async_runtime::spawn(async move {
-            if let Some(cancel_binding) = get_settings(&app_clone).bindings.get("cancel").cloned() {
-                if let Some(state) = app_clone.try_state::<HandyKeysState>() {
-                    if let Err(e) = state.register(&cancel_binding) {
-                        error!("Failed to register cancel shortcut: {}", e);
-                    }
-                }
-            }
-        });
-    }
-}
-
-/// Unregister the cancel shortcut (called when recording stops)
-pub fn unregister_cancel_shortcut(app: &AppHandle) {
-    #[cfg(target_os = "linux")]
-    {
-        let _ = app;
-        return;
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    {
-        let app_clone = app.clone();
-        tauri::async_runtime::spawn(async move {
-            if let Some(cancel_binding) = get_settings(&app_clone).bindings.get("cancel").cloned() {
-                if let Some(state) = app_clone.try_state::<HandyKeysState>() {
-                    let _ = state.unregister(&cancel_binding);
-                }
-            }
-        });
-    }
 }
 
 /// Register a shortcut
@@ -571,4 +712,59 @@ pub fn stop_handy_keys_recording(app: AppHandle) -> Result<(), String> {
     let result = state.stop_recording();
     super::resume_all_shortcuts(&app);
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn abandoned_cancel_worker_releases_reconciliation_lock_after_sender_replacement() {
+        let generation = Arc::new(AtomicU64::new(1));
+        let reconciliation_lock = Arc::new(Mutex::new(()));
+        // Keep this sender alive: a disconnected-channel error would mask the bug.
+        let (_old_response_sender, old_response) = mpsc::channel();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (finished_tx, finished_rx) = mpsc::channel();
+        let worker_generation = Arc::clone(&generation);
+        let worker_lock = Arc::clone(&reconciliation_lock);
+        let worker = thread::spawn(move || {
+            let _guard = worker_lock.lock().unwrap();
+            started_tx.send(()).unwrap();
+            let result = wait_for_cancel_response(old_response, 1, &worker_generation);
+            finished_tx.send(result).unwrap();
+        });
+        started_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        // A slow but still-current worker is not timed out into a late registration.
+        assert!(finished_rx.recv_timeout(Duration::from_millis(80)).is_err());
+        generation.store(2, Ordering::SeqCst);
+        let error = finished_rx
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+            .unwrap_err();
+        assert!(error.contains("superseded by hook recovery"));
+        worker.join().unwrap();
+
+        // Another cancel reconciliation can now acquire the same lock and finish.
+        let _guard = reconciliation_lock
+            .try_lock()
+            .expect("old waiter retained cancel lock");
+        let (new_response_sender, new_response) = mpsc::channel();
+        new_response_sender.send(Ok(())).unwrap();
+        assert!(wait_for_cancel_response(new_response, 2, &generation).is_ok());
+    }
+
+    #[test]
+    fn cancel_reply_from_current_worker_preserves_backend_error() {
+        let generation = AtomicU64::new(5);
+        let (sender, response) = mpsc::channel();
+        sender
+            .send(Err("key is already registered".into()))
+            .unwrap();
+        assert_eq!(
+            wait_for_cancel_response(response, 5, &generation),
+            Err("key is already registered".into())
+        );
+    }
 }

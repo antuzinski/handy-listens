@@ -179,6 +179,10 @@
           "transcribe_with_post_process": {
             "name": "Бърз клавиш за постобработка",
             "description": "По избор: отделна комбинация, която винаги прилага ИИ постобработка върху транскрипцията."
+          },
+          "caption": {
+            "name": "Caption Shortcut",
+            "description": "The keyboard shortcut to capture and transcribe your voice and system audio."
           }
         },
         "errors": {
@@ -207,6 +211,9 @@
           "push_to_talk": "Записва, докато държите комбинацията натисната",
           "toggle": "Натиснете кратко комбинацията, за да започне записът, и отново, за да спре"
         }
+      },
+      "liveCaptions": {
+        "title": "Live Captions"
       }
     },
     "models": {
@@ -256,6 +263,12 @@
       "volume": {
         "title": "Сила на звука",
         "description": "Регулирайте силата на звуците за обратна връзка"
+      },
+      "systemAudioDevice": {
+        "title": "System Audio",
+        "description": "Select the device to capture system audio for transcription",
+        "placeholder": "Select system audio device...",
+        "loading": "Loading..."
       }
     },
     "advanced": {
@@ -383,6 +396,22 @@
         "remove": "Премахване на {{word}}",
         "duplicate": "„{{word}}“ вече съществува"
       },
+      "dictionary": {
+        "title": "Dictionary",
+        "description": "How to write ← how recognition hears it. One file feeds the Whisper hint, exact replacements for any language and LLM cleanup. Changes apply from the next dictation.",
+        "openDictionary": "Open dictionary",
+        "openCleanupPrompt": "Open cleanup prompt",
+        "openFolder": "Open folder",
+        "reset": "Reset to default",
+        "resetTitle": "Reset dictionary",
+        "resetConfirm": "Replace dictionary.txt with the default? The current file is saved as dictionary.txt.bak.",
+        "resetDone": "Dictionary reset; the previous file is saved as dictionary.txt.bak",
+        "status": "{{entries}} entries · {{conditional}} with a condition (LLM only) · {{inPrompt}} of {{terms}} terms in the Whisper hint",
+        "error": "Line {{line}}: {{message}}",
+        "previewPlaceholder": "Type a phrase to check replacements",
+        "preview": "Check",
+        "previewResult": "After replacements:"
+      },
       "whisperPrompt": {
         "title": "Подсказка за транскрипция в Whisper",
         "presetLabel": "1. Choose by spoken language",
@@ -414,6 +443,15 @@
       "fillerWordRemoval": {
         "title": "Премахване на думи паразити",
         "description": "Премахва често срещаните думи за колебание от транскрипциите. Изключете, за да ги запазите."
+      },
+      "chineseScript": {
+        "title": "Китайска писменост",
+        "description": "Записва транскрипциите на мандарин и кантонски с опростени или традиционни йероглифи. Другите езици остават непроменени.",
+        "options": {
+          "asTranscribed": "Както е транскрибирано",
+          "simplified": "Опростени",
+          "traditional": "Традиционни"
+        }
       }
     },
     "postProcessing": {
@@ -476,6 +514,7 @@
       "loading": "Зареждане на историята...",
       "empty": "Все още няма транскрипции. Започнете запис, за да изградите история!",
       "copyToClipboard": "Копиране на транскрипцията в клипборда",
+      "copyError": "Транскрипцията не бе копирана в клипборда.",
       "save": "Запазване на транскрипцията",
       "unsave": "Премахване от запазените",
       "delete": "Изтриване на записа",
@@ -697,7 +736,9 @@
     "modelLoadFailedUnknown": "неизвестен модел",
     "pasteFailedTitle": "Неуспешно поставяне на текст",
     "pasteFailed": "Текстът не можа да бъде поставен в активното приложение.",
-    "transcriptionFailedTitle": "Неуспешна транскрипция"
+    "transcriptionFailedTitle": "Неуспешна транскрипция",
+    "postProcessFailedTitle": "Text cleanup failed",
+    "postProcessFailed": "The original transcription was pasted. Reason: {{error}}"
   },
   "appLanguage": {
     "title": "Език на приложението",
@@ -709,7 +750,8 @@
     "options": {
       "system": "Системна",
       "light": "Светла",
-      "dark": "Тъмна"
+      "dark": "Тъмна",
+      "green": "Forest green"
     }
   },
   "overlay": {

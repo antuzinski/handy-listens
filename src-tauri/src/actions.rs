@@ -14,7 +14,6 @@ use crate::utils::{
     self, show_processing_overlay, show_recording_overlay, show_transcribing_overlay,
 };
 use crate::TranscriptionCoordinator;
-use ferrous_opencc::{config::BuiltinConfig, OpenCC};
 use log::{debug, error, warn};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -33,11 +32,12 @@ struct RecordingErrorEvent {
     detail: Option<String>,
 }
 
-/// Drop guard that notifies the [`TranscriptionCoordinator`] when the
-/// transcription pipeline finishes — whether it completes normally or panics.
-struct FinishGuard(AppHandle);
+/// Drop guard that finishes the transcription pipeline, including immediate
+/// model unloading on early exits.
+struct FinishGuard(AppHandle, Arc<TranscriptionManager>);
 impl Drop for FinishGuard {
     fn drop(&mut self) {
+        self.1.maybe_unload_immediately("transcription session");
         if let Some(c) = self.0.try_state::<TranscriptionCoordinator>() {
             c.notify_processing_finished();
         }
@@ -124,17 +124,20 @@ fn should_use_streaming_overlay(style: OverlayStyle, is_streaming: bool) -> bool
     style == OverlayStyle::Live && is_streaming
 }
 
-async fn post_process_transcription(settings: &AppSettings, transcription: &str) -> Option<String> {
+async fn post_process_transcription(
+    settings: &AppSettings,
+    transcription: &str,
+) -> Result<Option<String>, String> {
     if is_blank_transcription(transcription) {
         debug!("Post-processing skipped because the transcription is empty");
-        return None;
+        return Ok(None);
     }
 
     let provider = match settings.active_post_process_provider().cloned() {
         Some(provider) => provider,
         None => {
             debug!("Post-processing enabled but no provider is selected");
-            return None;
+            return Ok(None);
         }
     };
 
@@ -149,14 +152,14 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
             "Post-processing skipped because provider '{}' has no model configured",
             provider.id
         );
-        return None;
+        return Ok(None);
     }
 
     let selected_prompt_id = match &settings.post_process_selected_prompt_id {
         Some(id) => id.clone(),
         None => {
             debug!("Post-processing skipped because no prompt is selected");
-            return None;
+            return Ok(None);
         }
     };
 
@@ -171,13 +174,16 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
                 "Post-processing skipped because prompt '{}' was not found",
                 selected_prompt_id
             );
-            return None;
+            return Ok(None);
         }
     };
+    // The built-in dictionary cleanup prompt lives in cleanup_prompt.txt, and
+    // any prompt may reference the dictionary through ${dictionary}.
+    let prompt = crate::dictionary::resolve_llm_prompt(&selected_prompt_id, prompt);
 
     if prompt.trim().is_empty() {
         debug!("Post-processing skipped because the selected prompt is empty");
-        return None;
+        return Ok(None);
     }
 
     debug!(
@@ -210,7 +216,7 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
                     debug!(
                         "Apple Intelligence selected but not currently available on this device"
                     );
-                    return None;
+                    return Ok(None);
                 }
 
                 let token_limit = model.trim().parse::<i32>().unwrap_or(0);
@@ -222,19 +228,19 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
                     Ok(result) => {
                         if result.trim().is_empty() {
                             debug!("Apple Intelligence returned an empty response");
-                            None
+                            Ok(None)
                         } else {
                             let result = strip_invisible_chars(&result);
                             debug!(
                                 "Apple Intelligence post-processing succeeded. Output length: {} chars",
                                 result.len()
                             );
-                            Some(result)
+                            Ok(Some(result))
                         }
                     }
                     Err(err) => {
                         error!("Apple Intelligence post-processing failed: {}", err);
-                        None
+                        Err(err.to_string())
                     }
                 };
             }
@@ -242,7 +248,7 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
             #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
             {
                 debug!("Apple Intelligence provider selected on unsupported platform");
-                return None;
+                return Ok(None);
             }
         }
 
@@ -284,10 +290,10 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
                                 provider.id,
                                 result.len()
                             );
-                            return Some(result);
+                            return Ok(Some(result));
                         } else {
                             error!("Structured output response missing 'transcription' field");
-                            return Some(strip_invisible_chars(content));
+                            return Ok(Some(strip_invisible_chars(content)));
                         }
                     }
                     Err(e) => {
@@ -295,13 +301,13 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
                             "Failed to parse structured output JSON: {}. Returning raw content.",
                             e
                         );
-                        return Some(strip_invisible_chars(content));
+                        return Ok(Some(strip_invisible_chars(content)));
                     }
                 }
             }
             Ok(None) => {
                 error!("LLM API response has no content");
-                return None;
+                return Err("LLM API response has no content".to_string());
             }
             Err(e) => {
                 warn!(
@@ -333,11 +339,11 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
                 provider.id,
                 content.len()
             );
-            Some(content)
+            Ok(Some(content))
         }
         Ok(None) => {
             error!("LLM API response has no content");
-            None
+            Err("LLM API response has no content".to_string())
         }
         Err(e) => {
             error!(
@@ -345,55 +351,7 @@ async fn post_process_transcription(settings: &AppSettings, transcription: &str)
                 provider.id,
                 e
             );
-            None
-        }
-    }
-}
-
-async fn maybe_convert_chinese_variant(
-    effective_language: &str,
-    transcription: &str,
-) -> Option<String> {
-    // Gate on the language the model actually transcribed in (the effective
-    // language), not the persisted intent. A leftover zh-Hans/zh-Hant intent
-    // from a previously selected model must not run OpenCC S2T/T2S over output a
-    // non-Chinese model produced — that would silently rewrite any shared CJK
-    // characters (e.g. Japanese kanji) in the result.
-    let is_simplified = effective_language == "zh-Hans";
-    let is_traditional = effective_language == "zh-Hant";
-
-    if !is_simplified && !is_traditional {
-        debug!("effective language is not Simplified or Traditional Chinese; skipping conversion");
-        return None;
-    }
-
-    debug!(
-        "Starting Chinese variant conversion using OpenCC for language: {}",
-        effective_language
-    );
-
-    // Use OpenCC to convert based on selected language
-    let config = if is_simplified {
-        // Convert Traditional Chinese to Simplified Chinese
-        BuiltinConfig::Tw2sp
-    } else {
-        // Convert Simplified Chinese to Traditional Chinese
-        BuiltinConfig::S2tw
-    };
-
-    match OpenCC::from_config(config) {
-        Ok(converter) => {
-            let converted = converter.convert(transcription);
-            debug!(
-                "OpenCC translation completed. Input length: {}, Output length: {}",
-                transcription.len(),
-                converted.len()
-            );
-            Some(converted)
-        }
-        Err(e) => {
-            error!("Failed to initialize OpenCC converter: {}. Falling back to original transcription.", e);
-            None
+            Err(e.to_string())
         }
     }
 }
@@ -402,27 +360,6 @@ pub(crate) struct ProcessedTranscription {
     pub final_text: String,
     pub post_processed_text: Option<String>,
     pub post_process_prompt: Option<String>,
-}
-
-/// Resolve the persisted language *intent* into the language the currently-loaded
-/// model will actually use — the same capability-aware coercion the transcription
-/// paths apply (see [`crate::managers::model::effective_language`]). Post-processing
-/// resolves it independently so it agrees with the language the transcription ran
-/// in, without threading a value through the pipeline.
-fn resolve_effective_language(app: &AppHandle, settings: &AppSettings) -> String {
-    let tm = app.state::<Arc<TranscriptionManager>>();
-    let model_manager = app.state::<Arc<ModelManager>>();
-    let active_model = tm
-        .get_current_model()
-        .unwrap_or_else(|| settings.selected_model.clone());
-    match model_manager.get_model_info(&active_model) {
-        Some(info) => crate::managers::model::effective_language(
-            &settings.selected_language,
-            &info.supported_languages,
-            info.supports_language_detection,
-        ),
-        None => settings.selected_language.clone(),
-    }
 }
 
 pub(crate) async fn process_transcription_output(
@@ -435,18 +372,17 @@ pub(crate) async fn process_transcription_output(
     let mut post_processed_text: Option<String> = None;
     let mut post_process_prompt: Option<String> = None;
 
-    // Resolve the language the transcription actually ran in (the persisted
-    // intent coerced against the loaded model's capabilities) so OpenCC keys off
-    // the effective language rather than a possibly-stale intent.
-    let effective_language = resolve_effective_language(app, &settings);
-    if let Some(converted_text) =
-        maybe_convert_chinese_variant(&effective_language, transcription).await
-    {
-        final_text = converted_text;
-    }
-
     if post_process {
-        if let Some(processed_text) = post_process_transcription(&settings, &final_text).await {
+        let outcome = match post_process_transcription(&settings, &final_text).await {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                // The raw transcription is still pasted; make the fallback
+                // visible instead of silently skipping the cleanup.
+                let _ = app.emit("post-process-error", error);
+                None
+            }
+        };
+        if let Some(processed_text) = outcome {
             post_processed_text = Some(processed_text.clone());
             final_text = processed_text;
 
@@ -460,8 +396,6 @@ pub(crate) async fn process_transcription_output(
                 }
             }
         }
-    } else if final_text != transcription {
-        post_processed_text = Some(final_text.clone());
     }
 
     ProcessedTranscription {
@@ -490,6 +424,19 @@ impl ShortcutAction for TranscribeAction {
             }
         });
         let kickoff_elapsed = kickoff_started.elapsed();
+
+        // Don't open the mic if nothing can transcribe the recording; the load
+        // kicked off above fails and reports why.
+        if !tm.is_model_loaded() {
+            let selected_model = get_settings(app).selected_model;
+            if let Err(e) = app
+                .state::<Arc<ModelManager>>()
+                .get_model_path(&selected_model)
+            {
+                warn!("Not starting recording: no model can transcribe it ({})", e);
+                return;
+            }
+        }
 
         let binding_id = binding_id.to_string();
         let tray_started = Instant::now();
@@ -690,7 +637,7 @@ impl ShortcutAction for TranscribeAction {
         let cancel_generation = rm.cancel_generation();
 
         tauri::async_runtime::spawn(async move {
-            let _guard = FinishGuard(ah.clone());
+            let _guard = FinishGuard(ah.clone(), Arc::clone(&tm));
             debug!(
                 "Starting async transcription task for binding: {}",
                 binding_id

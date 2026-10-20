@@ -340,7 +340,14 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
 
 fn post_apply(app: &AppHandle) {
     let handle = app.clone();
-    if let Err(err) = app.run_on_main_thread(move || apply_on_main(&handle)) {
+    let queued_at = Instant::now();
+    if let Err(err) = app.run_on_main_thread(move || {
+        let wait = queued_at.elapsed();
+        if wait > std::time::Duration::from_millis(500) {
+            warn!("tray update waited {:?} for the main thread", wait);
+        }
+        apply_on_main(&handle);
+    }) {
         // Event loop is gone (shutdown). Clear `pending` so a later call, if
         // any, doesn't wait forever for an apply that will never run.
         error!("Failed to dispatch tray update to the main thread: {err}");
@@ -421,6 +428,12 @@ fn apply_on_main(app: &AppHandle) {
         }
     }
 
+    if started.elapsed() > std::time::Duration::from_millis(500) {
+        warn!(
+            "tray apply blocked the main thread for {:?}",
+            started.elapsed()
+        );
+    }
     debug!(
         "tray apply: icon={} menu={} busy={} took={:?}",
         if icon_changed {
@@ -445,9 +458,9 @@ pub fn tray_tooltip() -> String {
 
 fn version_label() -> String {
     if cfg!(debug_assertions) {
-        format!("Handy v{} (Dev)", env!("CARGO_PKG_VERSION"))
+        format!("{} v{} (Dev)", crate::APP_NAME, env!("CARGO_PKG_VERSION"))
     } else {
-        format!("Handy v{}", env!("CARGO_PKG_VERSION"))
+        format!("{} v{}", crate::APP_NAME, env!("CARGO_PKG_VERSION"))
     }
 }
 

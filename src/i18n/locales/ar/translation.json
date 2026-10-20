@@ -176,6 +176,10 @@
           "transcribe_with_post_process": {
             "name": "مفتاح المعالجة اللاحقة",
             "description": "اختياري: مفتاح اختصار مخصص يطبق دائماً المعالجة اللاحقة بالذكاء الاصطناعي على التفريغ الصوتي."
+          },
+          "caption": {
+            "name": "Caption Shortcut",
+            "description": "The keyboard shortcut to capture and transcribe your voice and system audio."
           }
         },
         "errors": {
@@ -204,6 +208,9 @@
           "push_to_talk": "يسجّل أثناء الضغط على الاختصار",
           "toggle": "انقر على الاختصار لبدء التسجيل، وانقر مرة أخرى للإيقاف"
         }
+      },
+      "liveCaptions": {
+        "title": "Live Captions"
       }
     },
     "sound": {
@@ -233,6 +240,12 @@
       "volume": {
         "title": "مستوى الصوت",
         "description": "ضبط مستوى صوت تنبيهات الصوت"
+      },
+      "systemAudioDevice": {
+        "title": "System Audio",
+        "description": "Select the device to capture system audio for transcription",
+        "placeholder": "Select system audio device...",
+        "loading": "Loading..."
       }
     },
     "advanced": {
@@ -360,6 +373,22 @@
         "remove": "إزالة {{word}}",
         "duplicate": "\"{{word}}\" موجود بالفعل"
       },
+      "dictionary": {
+        "title": "Dictionary",
+        "description": "How to write ← how recognition hears it. One file feeds the Whisper hint, exact replacements for any language and LLM cleanup. Changes apply from the next dictation.",
+        "openDictionary": "Open dictionary",
+        "openCleanupPrompt": "Open cleanup prompt",
+        "openFolder": "Open folder",
+        "reset": "Reset to default",
+        "resetTitle": "Reset dictionary",
+        "resetConfirm": "Replace dictionary.txt with the default? The current file is saved as dictionary.txt.bak.",
+        "resetDone": "Dictionary reset; the previous file is saved as dictionary.txt.bak",
+        "status": "{{entries}} entries · {{conditional}} with a condition (LLM only) · {{inPrompt}} of {{terms}} terms in the Whisper hint",
+        "error": "Line {{line}}: {{message}}",
+        "previewPlaceholder": "Type a phrase to check replacements",
+        "preview": "Check",
+        "previewResult": "After replacements:"
+      },
       "whisperPrompt": {
         "title": "موجّه النسخ في Whisper",
         "presetLabel": "1. Choose by spoken language",
@@ -391,6 +420,15 @@
       "fillerWordRemoval": {
         "title": "إزالة كلمات الحشو",
         "description": "يزيل كلمات التردد الشائعة من النصوص. عطّل هذا الخيار للاحتفاظ بها."
+      },
+      "chineseScript": {
+        "title": "الكتابة الصينية",
+        "description": "يكتب نصوص الماندرين والكانتونية بالأحرف المبسطة أو التقليدية. لا تتغير اللغات الأخرى.",
+        "options": {
+          "asTranscribed": "كما نُسخ",
+          "simplified": "مبسطة",
+          "traditional": "تقليدية"
+        }
       }
     },
     "postProcessing": {
@@ -453,6 +491,7 @@
       "loading": "...جاري تحميل السجل",
       "empty": "!لا يوجد تفريغ صوتي بعد. ابدأ التسجيل لبناء سجلك",
       "copyToClipboard": "نسخ التفريغ إلى الحافظة",
+      "copyError": "تعذر نسخ التفريغ إلى الحافظة.",
       "save": "حفظ التفريغ",
       "unsave": "إزالة من المحفوظات",
       "delete": "حذف الإدخال",
@@ -697,7 +736,9 @@
     "modelLoadFailedUnknown": "نموذج غير معروف",
     "pasteFailedTitle": "فشل لصق النص",
     "pasteFailed": "تعذر لصق النص في التطبيق النشط.",
-    "transcriptionFailedTitle": "فشل التفريغ النصي"
+    "transcriptionFailedTitle": "فشل التفريغ النصي",
+    "postProcessFailedTitle": "Text cleanup failed",
+    "postProcessFailed": "The original transcription was pasted. Reason: {{error}}"
   },
   "appLanguage": {
     "title": "لغة التطبيق",
@@ -709,7 +750,8 @@
     "options": {
       "system": "النظام",
       "light": "فاتح",
-      "dark": "داكن"
+      "dark": "داكن",
+      "green": "Forest green"
     }
   },
   "overlay": {
