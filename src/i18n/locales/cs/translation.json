@@ -199,6 +199,10 @@
           "transcribe_with_post_process": {
             "name": "Klávesa pro následné zpracování",
             "description": "Volitelné: Vyhrazená klávesová zkratka, která vždy použije AI následné zpracování na váš přepis."
+          },
+          "caption": {
+            "name": "Caption Shortcut",
+            "description": "The keyboard shortcut to capture and transcribe your voice and system audio."
           }
         },
         "errors": {
@@ -227,6 +231,9 @@
           "push_to_talk": "Nahrává, dokud držíte zkratku",
           "toggle": "Klepněte na zkratku pro zahájení nahrávání, klepněte znovu pro zastavení"
         }
+      },
+      "liveCaptions": {
+        "title": "Live Captions"
       }
     },
     "sound": {
@@ -256,6 +263,12 @@
       "volume": {
         "title": "Hlasitost",
         "description": "Upravte hlasitost zvukové odezvy"
+      },
+      "systemAudioDevice": {
+        "title": "System Audio",
+        "description": "Select the device to capture system audio for transcription",
+        "placeholder": "Select system audio device...",
+        "loading": "Loading..."
       }
     },
     "advanced": {
@@ -737,7 +750,8 @@
     "options": {
       "system": "Systém",
       "light": "Světlý",
-      "dark": "Tmavý"
+      "dark": "Tmavý",
+      "green": "Forest green"
     }
   },
   "overlay": {

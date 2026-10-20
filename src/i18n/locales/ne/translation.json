@@ -179,6 +179,10 @@
           "transcribe_with_post_process": {
             "name": "पोस्ट-प्रोसेसिङ हटकी",
             "description": "वैकल्पिक: तपाईंको ट्रान्सक्रिप्सनमा सधैँ AI पोस्ट-प्रोसेसिङ लागू गर्ने छुट्टै हटकी।"
+          },
+          "caption": {
+            "name": "Caption Shortcut",
+            "description": "The keyboard shortcut to capture and transcribe your voice and system audio."
           }
         },
         "errors": {
@@ -207,6 +211,9 @@
           "push_to_talk": "सर्टकट थिचिराखेसम्म रेकर्ड गर्छ",
           "toggle": "रेकर्डिङ सुरु गर्न सर्टकट ट्याप गर्नुहोस्, रोक्न फेरि ट्याप गर्नुहोस्"
         }
+      },
+      "liveCaptions": {
+        "title": "Live Captions"
       }
     },
     "models": {
@@ -256,6 +263,12 @@
       "volume": {
         "title": "भोल्युम",
         "description": "अडियो फिडब्याक आवाजको भोल्युम मिलाउनुहोस्"
+      },
+      "systemAudioDevice": {
+        "title": "System Audio",
+        "description": "Select the device to capture system audio for transcription",
+        "placeholder": "Select system audio device...",
+        "loading": "Loading..."
       }
     },
     "advanced": {
@@ -740,7 +753,8 @@
     "options": {
       "system": "सिस्टम",
       "light": "उज्यालो",
-      "dark": "अँध्यारो"
+      "dark": "अँध्यारो",
+      "green": "Forest green"
     }
   },
   "overlay": {

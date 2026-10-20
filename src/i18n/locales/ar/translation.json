@@ -176,6 +176,10 @@
           "transcribe_with_post_process": {
             "name": "مفتاح المعالجة اللاحقة",
             "description": "اختياري: مفتاح اختصار مخصص يطبق دائماً المعالجة اللاحقة بالذكاء الاصطناعي على التفريغ الصوتي."
+          },
+          "caption": {
+            "name": "Caption Shortcut",
+            "description": "The keyboard shortcut to capture and transcribe your voice and system audio."
           }
         },
         "errors": {
@@ -204,6 +208,9 @@
           "push_to_talk": "يسجّل أثناء الضغط على الاختصار",
           "toggle": "انقر على الاختصار لبدء التسجيل، وانقر مرة أخرى للإيقاف"
         }
+      },
+      "liveCaptions": {
+        "title": "Live Captions"
       }
     },
     "sound": {
@@ -233,6 +240,12 @@
       "volume": {
         "title": "مستوى الصوت",
         "description": "ضبط مستوى صوت تنبيهات الصوت"
+      },
+      "systemAudioDevice": {
+        "title": "System Audio",
+        "description": "Select the device to capture system audio for transcription",
+        "placeholder": "Select system audio device...",
+        "loading": "Loading..."
       }
     },
     "advanced": {
@@ -737,7 +750,8 @@
     "options": {
       "system": "النظام",
       "light": "فاتح",
-      "dark": "داكن"
+      "dark": "داكن",
+      "green": "Forest green"
     }
   },
   "overlay": {

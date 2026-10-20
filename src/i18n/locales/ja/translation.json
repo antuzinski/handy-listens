@@ -199,6 +199,10 @@
           "transcribe_with_post_process": {
             "name": "後処理のショートカット",
             "description": "文字起こしに常に AI 後処理を適用するキーボードショートカット。 (任意)"
+          },
+          "caption": {
+            "name": "Caption Shortcut",
+            "description": "The keyboard shortcut to capture and transcribe your voice and system audio."
           }
         },
         "errors": {
@@ -227,6 +231,9 @@
           "push_to_talk": "ショートカットを押している間だけ録音します",
           "toggle": "ショートカットをタップすると録音を開始し、もう一度タップすると停止します"
         }
+      },
+      "liveCaptions": {
+        "title": "Live Captions"
       }
     },
     "sound": {
@@ -256,6 +263,12 @@
       "volume": {
         "title": "音量",
         "description": "オーディオフィードバックの音量を調整"
+      },
+      "systemAudioDevice": {
+        "title": "System Audio",
+        "description": "Select the device to capture system audio for transcription",
+        "placeholder": "Select system audio device...",
+        "loading": "Loading..."
       }
     },
     "advanced": {
@@ -737,7 +750,8 @@
     "options": {
       "system": "システム",
       "light": "ライト",
-      "dark": "ダーク"
+      "dark": "ダーク",
+      "green": "Forest green"
     }
   },
   "overlay": {

@@ -56,12 +56,30 @@ export const WhisperPrompt: React.FC<WhisperPromptProps> = ({
   }, [isUpdating, savedPreset, savedPrompt, updateSetting]);
 
   const presetOptions = [
-    { value: "ru_punctuation", label: t("settings.advanced.whisperPrompt.presets.ru") },
-    { value: "ru_en", label: t("settings.advanced.whisperPrompt.presets.ruEn") },
-    { value: "en_punctuation", label: t("settings.advanced.whisperPrompt.presets.en") },
-    { value: "ru_instruction", label: t("settings.advanced.whisperPrompt.presets.ruInstruction") },
-    { value: "ru_en_instruction", label: t("settings.advanced.whisperPrompt.presets.ruEnInstruction") },
-    { value: "custom", label: t("settings.advanced.whisperPrompt.presets.custom") },
+    {
+      value: "ru_punctuation",
+      label: t("settings.advanced.whisperPrompt.presets.ru"),
+    },
+    {
+      value: "ru_en",
+      label: t("settings.advanced.whisperPrompt.presets.ruEn"),
+    },
+    {
+      value: "en_punctuation",
+      label: t("settings.advanced.whisperPrompt.presets.en"),
+    },
+    {
+      value: "ru_instruction",
+      label: t("settings.advanced.whisperPrompt.presets.ruInstruction"),
+    },
+    {
+      value: "ru_en_instruction",
+      label: t("settings.advanced.whisperPrompt.presets.ruEnInstruction"),
+    },
+    {
+      value: "custom",
+      label: t("settings.advanced.whisperPrompt.presets.custom"),
+    },
     { value: "none", label: t("settings.advanced.whisperPrompt.presets.none") },
   ];
 
@@ -69,7 +87,8 @@ export const WhisperPrompt: React.FC<WhisperPromptProps> = ({
     if (!value) return;
     setPreset(value);
     void updateSetting("whisper_prompt_preset", value);
-    const nextPrompt = value === "custom" ? savedPrompt : getPresetPrompt(value);
+    const nextPrompt =
+      value === "custom" ? savedPrompt : getPresetPrompt(value);
     setDraft(nextPrompt);
     void updateSetting("whisper_prompt", nextPrompt);
   };
@@ -83,7 +102,10 @@ export const WhisperPrompt: React.FC<WhisperPromptProps> = ({
       layout="stacked"
     >
       <div className="space-y-3">
-        <label className="block text-xs font-medium text-mid-gray" htmlFor="whisper-prompt-preset">
+        <label
+          className="block text-xs font-medium text-mid-gray"
+          htmlFor="whisper-prompt-preset"
+        >
           {t("settings.advanced.whisperPrompt.presetLabel")}
         </label>
         <Select
@@ -94,7 +116,10 @@ export const WhisperPrompt: React.FC<WhisperPromptProps> = ({
           disabled={isUpdating("whisper_prompt_preset")}
           className="w-full"
         />
-        <label className="block text-xs font-medium text-mid-gray" htmlFor="whisper-prompt-text">
+        <label
+          className="block text-xs font-medium text-mid-gray"
+          htmlFor="whisper-prompt-text"
+        >
           {t("settings.advanced.whisperPrompt.textLabel")}
         </label>
         <Textarea
@@ -102,7 +127,11 @@ export const WhisperPrompt: React.FC<WhisperPromptProps> = ({
           className="whisper-prompt-editor w-full"
           rows={4}
           maxLength={1000}
-          value={preset === "custom" || preset === "none" ? draft : getPresetPrompt(preset)}
+          value={
+            preset === "custom" || preset === "none"
+              ? draft
+              : getPresetPrompt(preset)
+          }
           onChange={(event) => {
             setDraft(event.target.value);
             if (preset !== "custom") {

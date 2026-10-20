@@ -179,6 +179,10 @@
           "transcribe_with_post_process": {
             "name": "पोस्ट-प्रोसेसिंग हॉटकी",
             "description": "वैकल्पिक: एक अलग हॉटकी जो आपके ट्रांसक्रिप्शन पर हमेशा AI पोस्ट-प्रोसेसिंग लागू करती है."
+          },
+          "caption": {
+            "name": "Caption Shortcut",
+            "description": "The keyboard shortcut to capture and transcribe your voice and system audio."
           }
         },
         "errors": {
@@ -207,6 +211,9 @@
           "push_to_talk": "जब तक आप शॉर्टकट दबाए रखते हैं, रिकॉर्डिंग होती है",
           "toggle": "रिकॉर्डिंग शुरू करने के लिए शॉर्टकट टैप करें, रोकने के लिए फिर से टैप करें"
         }
+      },
+      "liveCaptions": {
+        "title": "Live Captions"
       }
     },
     "models": {
@@ -256,6 +263,12 @@
       "volume": {
         "title": "वॉल्यूम",
         "description": "ऑडियो फ़ीडबैक साउंड का वॉल्यूम सेट करें"
+      },
+      "systemAudioDevice": {
+        "title": "System Audio",
+        "description": "Select the device to capture system audio for transcription",
+        "placeholder": "Select system audio device...",
+        "loading": "Loading..."
       }
     },
     "advanced": {
@@ -740,7 +753,8 @@
     "options": {
       "system": "सिस्टम",
       "light": "लाइट",
-      "dark": "डार्क"
+      "dark": "डार्क",
+      "green": "Forest green"
     }
   },
   "overlay": {

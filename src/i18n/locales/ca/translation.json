@@ -179,6 +179,10 @@
           "transcribe_with_post_process": {
             "name": "Drecera de postprocessament",
             "description": "Opcional: una drecera específica que sempre aplica postprocessament amb IA a la transcripció."
+          },
+          "caption": {
+            "name": "Caption Shortcut",
+            "description": "The keyboard shortcut to capture and transcribe your voice and system audio."
           }
         },
         "errors": {
@@ -207,6 +211,9 @@
           "push_to_talk": "Enregistreu mentre manteniu premuda la drecera",
           "toggle": "Premeu la drecera per iniciar l'enregistrament i torneu-la a prémer per aturar-lo"
         }
+      },
+      "liveCaptions": {
+        "title": "Live Captions"
       }
     },
     "models": {
@@ -256,6 +263,12 @@
       "volume": {
         "title": "Volum",
         "description": "Ajusta el volum dels avisos sonors"
+      },
+      "systemAudioDevice": {
+        "title": "System Audio",
+        "description": "Select the device to capture system audio for transcription",
+        "placeholder": "Select system audio device...",
+        "loading": "Loading..."
       }
     },
     "advanced": {
@@ -423,6 +436,22 @@
           "simplified": "Simplificat",
           "traditional": "Tradicional"
         }
+      },
+      "whisperPrompt": {
+        "title": "Whisper transcription prompt",
+        "description": "Used only by Whisper-family models (including Turbo and Breeze), for dictation and live captions. Pick a preset that matches the spoken language; English-only audio should use English, not a Russian prompt. Other models such as Nemotron ignore this field.",
+        "presetLabel": "1. Choose by the language you speak",
+        "textLabel": "2. Prompt sent to Whisper (editable)",
+        "presets": {
+          "ru": "Russian · punctuation",
+          "ruEn": "Russian + English terms · punctuation (recommended)",
+          "en": "English · punctuation",
+          "ruInstruction": "Russian · instruction (experimental)",
+          "ruEnInstruction": "Russian + English · instruction (experimental)",
+          "custom": "Custom prompt",
+          "none": "No style prompt (Custom Words still apply)"
+        },
+        "placeholder": "Example: Product names: Handy, Vulkan. Use natural punctuation and preserve English words in English."
       }
     },
     "postProcessing": {
@@ -724,7 +753,8 @@
     "options": {
       "system": "Sistema",
       "light": "Clar",
-      "dark": "Fosc"
+      "dark": "Fosc",
+      "green": "Forest green"
     }
   },
   "overlay": {

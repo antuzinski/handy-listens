@@ -39,10 +39,12 @@ export const SystemAudioDeviceSelector: React.FC<SystemAudioDeviceSelectorProps>
         await resetSetting("selected_system_audio_device");
       };
 
-      const systemAudioDeviceOptions = outputDevices.map((device: AudioDevice) => ({
-        value: device.name,
-        label: device.name,
-      }));
+      const systemAudioDeviceOptions = outputDevices.map(
+        (device: AudioDevice) => ({
+          value: device.name,
+          label: device.name,
+        }),
+      );
 
       return (
         <SettingContainer
@@ -73,7 +75,9 @@ export const SystemAudioDeviceSelector: React.FC<SystemAudioDeviceSelectorProps>
             <ResetButton
               onClick={handleReset}
               disabled={
-                disabled || isUpdating("selected_system_audio_device") || isLoading
+                disabled ||
+                isUpdating("selected_system_audio_device") ||
+                isLoading
               }
             />
           </div>

@@ -256,7 +256,12 @@ const RecordingOverlay: React.FC = () => {
               >
                 <p>
                   <span className="committed">
-                    {streamText.committed ? streamText.committed.replace(/([.?!。！？])\s+/g, "$1\n") + " " : ""}
+                    {streamText.committed
+                      ? streamText.committed.replace(
+                          /([.?!。！？])\s+/g,
+                          "$1\n",
+                        ) + " "
+                      : ""}
                   </span>
                   <span className="tentative">{streamText.tentative}</span>
                   {/* Drop the blinking caret once finalizing — it's no longer
