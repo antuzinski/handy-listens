@@ -1,4 +1,4 @@
-name: Check upstream releases
+name: Check upstream changes
 
 on:
   schedule:
@@ -18,62 +18,185 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Check Handy and Klava releases
+      - name: Compare upstream releases and code
         uses: actions/github-script@v9
         with:
           script: |
             const fs = require("node:fs");
             const baselines = JSON.parse(fs.readFileSync(".github/upstream-baselines.json", "utf8"));
             const upstreams = [
-              { key: "handy", label: "Handy", notes: "Review upstream Handy changes and port compatible improvements without overwriting fork-specific features." },
-              { key: "klava-nevinovata", label: "Klava Nevinovata", notes: "Review Sokolov's fork changes and port relevant improvements selectively; do not merge its older Handy base wholesale." },
+              {
+                key: "handy",
+                label: "Handy",
+                guidance: "Review compatible Handy changes while preserving Handy Listens features. Use the fork update checklist before porting anything.",
+              },
+              {
+                key: "klava-nevinovata",
+                label: "Klava Nevinovata",
+                guidance: "Review only Klava-specific changes. Klava has a divergent Handy history: do not merge its branch wholesale. Compare its overlay with the corresponding Handy base as described in FORK_UPDATING.md.",
+              },
             ];
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
 
             const labels = await github.paginate(github.rest.issues.listLabelsForRepo, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
+              owner,
+              repo,
               per_page: 100,
             });
             if (!labels.some((label) => label.name === "upstream-review")) {
               await github.rest.issues.createLabel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
+                owner,
+                repo,
                 name: "upstream-review",
                 color: "0e8a16",
-                description: "Review and selectively integrate upstream changes",
+                description: "Review upstream releases and code changes",
               });
             }
 
-            const existing = await github.paginate(github.rest.issues.listForRepo, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: "all",
+            const openIssues = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: "open",
               per_page: 100,
             });
 
             for (const upstream of upstreams) {
               const baseline = baselines[upstream.key];
-              const [owner, repo] = baseline.repository.split("/");
-              const { data: release } = await github.rest.repos.getLatestRelease({ owner, repo });
-              if (release.tag_name === baseline.release) continue;
+              if (!baseline?.repository || !baseline?.release) {
+                throw new Error(`Missing repository or release baseline for ${upstream.key}`);
+              }
 
-              const title = `Review ${upstream.label} release ${release.tag_name}`;
-              if (existing.some((issue) => !issue.pull_request && issue.title === title)) continue;
+              const [upstreamOwner, upstreamRepo] = baseline.repository.split("/");
+              const [{ data: repository }, { data: latestRelease }] = await Promise.all([
+                github.rest.repos.get({ owner: upstreamOwner, repo: upstreamRepo }),
+                github.rest.repos.getLatestRelease({ owner: upstreamOwner, repo: upstreamRepo }),
+              ]);
+              const [{ data: branch }, { data: releaseCommit }] = await Promise.all([
+                github.rest.repos.getBranch({
+                  owner: upstreamOwner,
+                  repo: upstreamRepo,
+                  branch: repository.default_branch,
+                }),
+                github.rest.repos.getCommit({
+                  owner: upstreamOwner,
+                  repo: upstreamRepo,
+                  ref: latestRelease.tag_name,
+                }),
+              ]);
 
-              await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title,
-                body: [
-                  `A new upstream release was detected: **${release.tag_name}**.`,
-                  "",
-                  `Current integrated baseline: **${baseline.release}**.`,
-                  `Release notes: ${release.html_url}`,
-                  "",
-                  upstream.notes,
-                  "",
-                  "After reviewing and integrating changes, update this source's entry in `.github/upstream-baselines.json`.",
-                ].join("\n"),
-                labels: ["upstream-review"],
+              const reviewedCode = baseline.commit || baseline.release;
+              const targets = [{ kind: "default branch", base: reviewedCode, ref: branch.commit.sha }];
+              if (latestRelease.tag_name !== baseline.release) {
+                targets.push({ kind: "latest release", base: baseline.release, ref: releaseCommit.sha });
+              }
+
+              const comparisons = [];
+              const commits = new Map();
+              const changedFiles = new Set();
+              let comparisonFailed = false;
+              for (const target of targets) {
+                if (target.base === target.ref) continue;
+                try {
+                  const { data } = await github.rest.repos.compareCommits({
+                    owner: upstreamOwner,
+                    repo: upstreamRepo,
+                    base: target.base,
+                    head: target.ref,
+                  });
+                  comparisons.push({ ...target, data });
+                  for (const commit of data.commits ?? []) commits.set(commit.sha, commit);
+                  for (const file of data.files ?? []) changedFiles.add(file.filename);
+                } catch (error) {
+                  comparisonFailed = true;
+                  comparisons.push({ ...target, error: error.message });
+                }
+              }
+
+              const releaseChanged = latestRelease.tag_name !== baseline.release;
+              const codeChanged = comparisons.some(({ data }) => (data?.ahead_by ?? 0) > 0);
+              if (!releaseChanged && !codeChanged && !comparisonFailed) continue;
+
+              const marker = `<!-- upstream-review:${upstream.key} -->`;
+              const legacyTitle = upstream.key === "handy"
+                ? /^Review Handy release\b/i
+                : /^Review Klava Nevinovata release\b/i;
+              const relatedIssues = openIssues.filter((issue) =>
+                !issue.pull_request && (issue.body?.includes(marker) || legacyTitle.test(issue.title))
+              );
+              const matchingReleaseIssue = relatedIssues.find((issue) => issue.title.includes(latestRelease.tag_name));
+              const existingIssue = matchingReleaseIssue ?? relatedIssues.sort((a, b) => b.number - a.number)[0];
+              const title = `Upstream code review: ${upstream.label} (${latestRelease.tag_name})`;
+
+              const comparisonLines = comparisons.map(({ kind, base, ref, data, error }) => {
+                if (error) return `- **${kind}**: comparison failed: ${error}`;
+                const compareUrl = `https://github.com/${baseline.repository}/compare/${base}...${ref}`;
+                return `- **${kind}**: ${data.ahead_by} new commits, ${data.behind_by} commits behind the reviewed point; [open code comparison](${compareUrl}).`;
               });
+
+              const allCommits = [...commits.values()];
+              const commitList = allCommits
+                .sort((a, b) => new Date(a.commit.author.date) - new Date(b.commit.author.date))
+                .slice(0, 60)
+                .map((commit) => `- [${commit.sha.slice(0, 7)}](${commit.html_url}) ${commit.commit.message.split("\n")[0]}`);
+              const fileList = [...changedFiles].sort().slice(0, 120).map((file) => `- \`${file}\``);
+              const truncationNotes = [];
+              if (allCommits.length > 60) truncationNotes.push("Commit list is limited to the first 60 entries; use the comparison links for the complete list.");
+              if (changedFiles.size > 120) truncationNotes.push("File list is limited to 120 paths; use the comparison links for the complete list.");
+              if (comparisons.some(({ data }) => data && data.total_commits > (data.commits?.length ?? 0))) {
+                truncationNotes.push("GitHub truncated at least one comparison response; the comparison links show the full change set.");
+              }
+
+              const body = [
+                marker,
+                `A scheduled check found upstream changes for **${baseline.repository}**. This issue is a review packet; it does not copy, merge, or install upstream code.`,
+                "",
+                `**Reviewed release:** \`${baseline.release}\``,
+                `**Reviewed code commit:** \`${reviewedCode}\`${baseline.commit ? "" : " (not pinned yet; currently falling back to the release tag)"}`,
+                `**Latest release:** [${latestRelease.tag_name}](${latestRelease.html_url})${releaseChanged ? " (new release)" : " (unchanged)"}`,
+                `**Latest release commit:** [\`${releaseCommit.sha.slice(0, 7)}\`](${releaseCommit.html_url})`,
+                `**Default branch:** \`${repository.default_branch}\` at [\`${branch.commit.sha.slice(0, 7)}\`](${branch.commit.html_url})`,
+                "",
+                "### Changes since reviewed baseline",
+                ...comparisonLines,
+                "",
+                upstream.guidance,
+                "",
+                "### Commit summaries",
+                ...(commitList.length ? commitList : ["- No commits returned by the comparison API."]),
+                "",
+                `### Changed paths (${changedFiles.size}${changedFiles.size >= 120 ? "+" : ""})`,
+                ...(fileList.length ? fileList : ["- No file list returned by the comparison API."]),
+                ...(truncationNotes.length ? ["", ...truncationNotes.map((note) => `> ${note}`)] : []),
+                "",
+                "### Manual review steps",
+                "1. Read the commit summaries and inspect the linked diff, especially changes touching files listed above.",
+                "2. Compare candidates with Handy Listens features and the Klava overlay rules in `FORK_UPDATING.md`.",
+                "3. Port only selected changes, then build and verify them using the project checklist.",
+                "4. After review, update this source's `release` and `commit` in `.github/upstream-baselines.json`, then close the issue with what was taken or skipped.",
+                "",
+                `Workflow run: ${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`,
+              ].join("\n");
+
+              if (existingIssue) {
+                await github.rest.issues.update({
+                  owner,
+                  repo,
+                  issue_number: existingIssue.number,
+                  title,
+                  body,
+                  labels: [...new Set([...(existingIssue.labels ?? []).map((label) => label.name), "upstream-review"])],
+                });
+                core.info(`Updated issue #${existingIssue.number} for ${upstream.label}`);
+              } else {
+                const { data: issue } = await github.rest.issues.create({
+                  owner,
+                  repo,
+                  title,
+                  body,
+                  labels: ["upstream-review"],
+                });
+                openIssues.push(issue);
+                core.info(`Created issue #${issue.number} for ${upstream.label}`);
+              }
             }

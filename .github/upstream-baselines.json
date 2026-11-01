@@ -1,10 +1,12 @@
 {
   "handy": {
     "repository": "cjpais/Handy",
-    "release": "v0.9.7"
+    "release": "v0.9.7",
+    "commit": "05e0aedd2906f0d82722735f930465950c476b90"
   },
   "klava-nevinovata": {
     "repository": "egsok/klava-nevinovata",
-    "release": "v0.9.6-1"
+    "release": "v0.9.6-1",
+    "commit": "350fb0fa260e1e2384367f2382e9f4d285d43910"
   }
 }
